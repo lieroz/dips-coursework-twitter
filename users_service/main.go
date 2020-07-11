@@ -96,7 +96,59 @@ func (*UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummar
 }
 
 func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUsersServer) error {
-	return status.Errorf(codes.Unimplemented, "method GetUsers not implemented")
+	if in.GetUsername() == "" {
+		return status.Errorf(codes.InvalidArgument, "username field can't be empty")
+	}
+
+	var userProto string
+	var err error
+	ctx := context.TODO()
+
+	userProto, err = rdb.Get(ctx, in.Username).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return status.Errorf(codes.NotFound, "user with username: '%s' doesn't exist", in.Username)
+		}
+		return status.Errorf(codes.Internal, "%s", err)
+	}
+
+	var user pb.User
+	if err = proto.Unmarshal([]byte(userProto), &user); err != nil {
+		return status.Errorf(codes.Internal, "%s", err)
+	}
+
+	var usernames []string
+	if in.GetRole() == pb.GetUsersRequest_Follower {
+		usernames = user.GetFollowers()
+	} else {
+		usernames = user.GetFollowing()
+	}
+
+	var reply pb.GetUsersReply
+	for _, username := range usernames {
+		userProto, err = rdb.Get(ctx, username).Result()
+		if err != nil {
+			if err == redis.Nil {
+				log.Printf("user with username: '%s' doesn't exist\n", username)
+			} else {
+				log.Printf("%s\n", err)
+			}
+			reply.Reply = &pb.GetUsersReply_Error{Error: true}
+		} else {
+			if err = proto.Unmarshal([]byte(userProto), &user); err != nil {
+				reply.Reply = &pb.GetUsersReply_Error{Error: true}
+				log.Printf("%s\n", err)
+			} else {
+				reply.Reply = &pb.GetUsersReply_User{User: &user}
+			}
+		}
+
+		if err = stream.Send(&reply); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (*UsersServerImpl) UpdateFollowers(ctx context.Context, in *pb.UpdateFollowersRequest) (*pb.GenericUpdateReply, error) {
