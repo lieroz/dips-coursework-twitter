@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+option go_package = "github.com/lieroz/dips-coursework-twitter/users_service;protos";
+
+package users;
+
+message User {
+  string username = 1;
+  string firstname = 2;
+  string lastname = 3;
+  string description = 4;
+  int64 registration_timestamp = 5;
+  repeated string followers = 6;
+  repeated string following = 7;
+  repeated int64 tweets = 8;
+}
+
+message EmptyReply {}
+
+message CreateRequest {
+  string username = 1;
+  string firstname = 2;
+  string lastname = 3;
+  string description = 4;
+}
+
+message DeleteRequest {
+  string username = 1;
+}
+
+message GetSummaryRequest {
+  string username = 1;
+}
+
+message GetSummaryReply {
+  string username = 1;
+  string firstname = 2;
+  string lastname = 3;
+  string description = 4;
+  int64 registration_timestamp = 5;
+  int64 followers_count = 6;
+  int64 following_count = 7;
+  int64 tweets_count = 8;
+}
+
+message GetUsersRequest {
+  enum Role {
+    Follower = 0;
+    Followed = 1;
+  }
+
+  string username = 1;
+  Role role = 2;
+}
+
+message GetUsersReply {
+  oneof reply {
+    User user = 1;
+    bool error = 2;
+  }
+}
+
+enum Action {
+  Add = 0;
+  Del = 1;
+}
+
+message UpdateFollowersRequest {
+  Action action = 1;
+  repeated string follower = 2;
+}
+
+message UpdateFollowedRequest {
+  Action action = 1;
+  repeated string followed = 2;
+}
+
+message UpdateTweetsRequest {
+  Action action = 1;
+  repeated int64 tweet = 2;
+}
+
+message GenericUpdateReply {
+  enum Code {
+    Ok = 0;
+    Error = 1;
+  }
+
+  repeated Code code = 1;
+}
+
+service Users {
+  rpc CreateUser(CreateRequest) returns (EmptyReply);
+  rpc DeleteUser(DeleteRequest) returns (EmptyReply);
+  rpc GetUserInfoSummary(GetSummaryRequest) returns (GetSummaryReply);
+
+  rpc GetUsers(GetUsersRequest) returns (stream GetUsersReply);
+
+  rpc UpdateFollowers(UpdateFollowersRequest) returns (GenericUpdateReply);
+  rpc UpdateFollowing(UpdateFollowedRequest) returns (GenericUpdateReply);
+
+  rpc UpdateTweets(UpdateTweetsRequest) returns (GenericUpdateReply);
+}
