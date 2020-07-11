@@ -39,12 +39,12 @@ func (s *UsersServerImpl) CreateUser(ctx context.Context, in *pb.CreateRequest) 
 		RegistrationTimestamp: time.Now().Unix(),
 	}
 
-	proto, err := proto.Marshal(&user)
+	userProto, err := proto.Marshal(&user)
 	if err != nil {
 		return &pb.EmptyReply{}, err
 	}
 
-	notExist, err := rdb.SetNX(ctx, in.Username, proto, 0).Result()
+	notExist, err := rdb.SetNX(ctx, in.Username, userProto, 0).Result()
 	if err != nil {
 		return &pb.EmptyReply{}, err
 	}
@@ -65,7 +65,33 @@ func (s *UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) 
 }
 
 func (s *UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummaryRequest) (*pb.GetSummaryReply, error) {
-	return &pb.GetSummaryReply{}, nil
+	if in.GetUsername() == "" {
+		return &pb.GetSummaryReply{}, fmt.Errorf("username field can't be empty")
+	}
+
+	userProto, err := rdb.Get(ctx, in.Username).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return &pb.GetSummaryReply{}, fmt.Errorf("user with username: '%s' doesn't exist", in.Username)
+		}
+		return &pb.GetSummaryReply{}, err
+	}
+
+	var user pb.User
+	if err := proto.Unmarshal([]byte(userProto), &user); err != nil {
+		return &pb.GetSummaryReply{}, err
+	}
+
+	return &pb.GetSummaryReply{
+		Username:              user.Username,
+		Firstname:             user.Firstname,
+		Lastname:              user.Lastname,
+		Description:           user.Description,
+		RegistrationTimestamp: user.RegistrationTimestamp,
+		FollowersCount:        int64(len(user.Followers)),
+		FollowingCount:        int64(len(user.Following)),
+		TweetsCount:           int64(len(user.Tweets)),
+	}, nil
 }
 
 func main() {
