@@ -75,6 +75,23 @@ func find(s []string, r string) bool {
 	return false
 }
 
+func diff(lhs, rhs []int64) []int64 {
+	var result []int64
+	for _, l := range lhs {
+		found := false
+		for _, r := range rhs {
+			if l == r {
+				found = true
+			}
+		}
+
+		if !found {
+			result = append(result, l)
+		}
+	}
+	return result
+}
+
 type UsersServerImpl struct {
 	pb.UnimplementedUsersServer
 }
@@ -262,8 +279,28 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 	return &pb.EmptyReply{}, nil
 }
 
-func (*UsersServerImpl) UpdateTweets(ctx context.Context, in *pb.UpdateTweetsRequest) (*pb.GenericUpdateReply, error) {
-	return &pb.GenericUpdateReply{}, nil
+func (*UsersServerImpl) UpdateTweets(ctx context.Context, in *pb.UpdateTweetsRequest) (*pb.EmptyReply, error) {
+	if in.GetUsername() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "'username' field can't be empty")
+	}
+
+	user, err := getUser(ctx, in.Username)
+	if err != nil {
+		return nil, err
+	}
+
+	switch in.GetAction() {
+	case pb.UpdateTweetsRequest_Add:
+		user.Tweets = append(user.Tweets, in.Tweets...)
+	case pb.UpdateTweetsRequest_Del:
+		user.Tweets = diff(user.Tweets, in.Tweets)
+	}
+
+	if err := setUserIfExists(ctx, user); err != nil {
+		return nil, err
+	}
+
+	return &pb.EmptyReply{}, nil
 }
 
 func main() {

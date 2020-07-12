@@ -22,7 +22,7 @@ type UsersClient interface {
 	GetUserInfoSummary(ctx context.Context, in *GetSummaryRequest, opts ...grpc.CallOption) (*GetSummaryReply, error)
 	GetUsers(ctx context.Context, in *GetUsersRequest, opts ...grpc.CallOption) (Users_GetUsersClient, error)
 	Follow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*EmptyReply, error)
-	UpdateTweets(ctx context.Context, in *UpdateTweetsRequest, opts ...grpc.CallOption) (*GenericUpdateReply, error)
+	UpdateTweets(ctx context.Context, in *UpdateTweetsRequest, opts ...grpc.CallOption) (*EmptyReply, error)
 }
 
 type usersClient struct {
@@ -101,8 +101,8 @@ func (c *usersClient) Follow(ctx context.Context, in *FollowRequest, opts ...grp
 	return out, nil
 }
 
-func (c *usersClient) UpdateTweets(ctx context.Context, in *UpdateTweetsRequest, opts ...grpc.CallOption) (*GenericUpdateReply, error) {
-	out := new(GenericUpdateReply)
+func (c *usersClient) UpdateTweets(ctx context.Context, in *UpdateTweetsRequest, opts ...grpc.CallOption) (*EmptyReply, error) {
+	out := new(EmptyReply)
 	err := c.cc.Invoke(ctx, "/users.Users/UpdateTweets", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ type UsersServer interface {
 	GetUserInfoSummary(context.Context, *GetSummaryRequest) (*GetSummaryReply, error)
 	GetUsers(*GetUsersRequest, Users_GetUsersServer) error
 	Follow(context.Context, *FollowRequest) (*EmptyReply, error)
-	UpdateTweets(context.Context, *UpdateTweetsRequest) (*GenericUpdateReply, error)
+	UpdateTweets(context.Context, *UpdateTweetsRequest) (*EmptyReply, error)
 	mustEmbedUnimplementedUsersServer()
 }
 
@@ -142,7 +142,7 @@ func (*UnimplementedUsersServer) GetUsers(*GetUsersRequest, Users_GetUsersServer
 func (*UnimplementedUsersServer) Follow(context.Context, *FollowRequest) (*EmptyReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Follow not implemented")
 }
-func (*UnimplementedUsersServer) UpdateTweets(context.Context, *UpdateTweetsRequest) (*GenericUpdateReply, error) {
+func (*UnimplementedUsersServer) UpdateTweets(context.Context, *UpdateTweetsRequest) (*EmptyReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateTweets not implemented")
 }
 func (*UnimplementedUsersServer) mustEmbedUnimplementedUsersServer() {}

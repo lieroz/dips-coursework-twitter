@@ -78,16 +78,7 @@ message UpdateTweetsRequest {
 
   Action action = 1;
   string username = 2;
-  repeated int64 tweet = 3;
-}
-
-message GenericUpdateReply {
-  enum Code {
-    Ok = 0;
-    Error = 1;
-  }
-
-  repeated Code code = 1;
+  repeated int64 tweets = 3;
 }
 
 service Users {
@@ -99,5 +90,5 @@ service Users {
 
   rpc Follow(FollowRequest) returns (EmptyReply);
 
-  rpc UpdateTweets(UpdateTweetsRequest) returns (GenericUpdateReply);
+  rpc UpdateTweets(UpdateTweetsRequest) returns (EmptyReply);
 }
