@@ -23,13 +23,65 @@ const (
 	port = ":8001"
 )
 
+func getUser(ctx context.Context, username string) (*pb.User, error) {
+	message, err := rdb.Get(ctx, username).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, status.Errorf(codes.NotFound, "user with username: '%s' doesn't exist", username)
+		}
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+
+	var user pb.User
+	if err = proto.Unmarshal([]byte(message), &user); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+
+	return &user, nil
+}
+
+func setUserIfExists(ctx context.Context, user *pb.User) error {
+	message, err := proto.Marshal(user)
+	if err != nil {
+		return status.Errorf(codes.Internal, "%s", err)
+	}
+
+	exists, err := rdb.SetXX(ctx, user.Username, message, 0).Result()
+	if err != nil {
+		return status.Errorf(codes.Internal, "%s", err)
+	}
+	if !exists {
+		return status.Errorf(codes.AlreadyExists, "user with username: '%s' already exists", user.Username)
+	}
+
+	return nil
+}
+
+func remove(s []string, r string) []string {
+	for i, v := range s {
+		if v == r {
+			return append(s[:i], s[i+1:]...)
+		}
+	}
+	return s
+}
+
+func find(s []string, r string) bool {
+	for _, v := range s {
+		if v == r {
+			return true
+		}
+	}
+	return false
+}
+
 type UsersServerImpl struct {
 	pb.UnimplementedUsersServer
 }
 
 func (*UsersServerImpl) CreateUser(ctx context.Context, in *pb.CreateRequest) (*pb.EmptyReply, error) {
 	if in.GetUsername() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "username field can't be empty")
+		return nil, status.Errorf(codes.InvalidArgument, "'username' field can't be empty")
 	}
 
 	user := pb.User{
@@ -45,20 +97,51 @@ func (*UsersServerImpl) CreateUser(ctx context.Context, in *pb.CreateRequest) (*
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	notExist, err := rdb.SetNX(ctx, in.Username, userProto, 0).Result()
+	notExists, err := rdb.SetNX(ctx, in.Username, userProto, 0).Result()
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
-	if !notExist {
+	if !notExists {
 		return nil, status.Errorf(codes.AlreadyExists, "user with username: '%s' already exists", in.Username)
 	}
 	return &pb.EmptyReply{}, nil
 }
 
+// TODO: Add delete for tweets
 func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*pb.EmptyReply, error) {
 	if in.GetUsername() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "username field can't be empty")
+		return nil, status.Errorf(codes.InvalidArgument, "'username' field can't be empty")
 	}
+
+	user, err := getUser(ctx, in.Username)
+	if err != nil {
+		return nil, err
+	}
+
+	followers := user.GetFollowers()
+	following := user.GetFollowing()
+
+	// FIXME: here data may stay inconsistent and it is not very highload friendly
+	for _, follower := range followers {
+		if user, err = getUser(ctx, follower); err != nil {
+			return nil, err
+		}
+		user.Following = remove(user.Following, in.Username)
+		if err = setUserIfExists(ctx, user); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, followed := range following {
+		if user, err = getUser(ctx, followed); err != nil {
+			return nil, err
+		}
+		user.Followers = remove(user.Followers, in.Username)
+		if err = setUserIfExists(ctx, user); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := rdb.Del(ctx, in.Username).Err(); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
@@ -70,17 +153,9 @@ func (*UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummar
 		return nil, status.Errorf(codes.InvalidArgument, "username field can't be empty")
 	}
 
-	userProto, err := rdb.Get(ctx, in.Username).Result()
+	user, err := getUser(ctx, in.Username)
 	if err != nil {
-		if err == redis.Nil {
-			return nil, status.Errorf(codes.NotFound, "user with username: '%s' doesn't exist", in.Username)
-		}
-		return nil, status.Errorf(codes.Internal, "%s", err)
-	}
-
-	var user pb.User
-	if err := proto.Unmarshal([]byte(userProto), &user); err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
+		return nil, err
 	}
 
 	return &pb.GetSummaryReply{
@@ -97,34 +172,28 @@ func (*UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummar
 
 func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUsersServer) error {
 	if in.GetUsername() == "" {
-		return status.Errorf(codes.InvalidArgument, "username field can't be empty")
+		return status.Errorf(codes.InvalidArgument, "'username' field can't be empty")
 	}
 
 	var userProto string
 	var err error
 	ctx := context.TODO()
 
-	userProto, err = rdb.Get(ctx, in.Username).Result()
+	user, err := getUser(ctx, in.Username)
 	if err != nil {
-		if err == redis.Nil {
-			return status.Errorf(codes.NotFound, "user with username: '%s' doesn't exist", in.Username)
-		}
-		return status.Errorf(codes.Internal, "%s", err)
-	}
-
-	var user pb.User
-	if err = proto.Unmarshal([]byte(userProto), &user); err != nil {
-		return status.Errorf(codes.Internal, "%s", err)
+		return err
 	}
 
 	var usernames []string
-	if in.GetRole() == pb.GetUsersRequest_Follower {
+	switch in.GetRole() {
+	case pb.Role_Follower:
 		usernames = user.GetFollowers()
-	} else {
+	case pb.Role_Followed:
 		usernames = user.GetFollowing()
 	}
 
 	var reply pb.GetUsersReply
+	//FIXME: this is not very highload friendly
 	for _, username := range usernames {
 		userProto, err = rdb.Get(ctx, username).Result()
 		if err != nil {
@@ -135,11 +204,11 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 			}
 			reply.Reply = &pb.GetUsersReply_Error{Error: true}
 		} else {
-			if err = proto.Unmarshal([]byte(userProto), &user); err != nil {
+			if err = proto.Unmarshal([]byte(userProto), user); err != nil {
 				reply.Reply = &pb.GetUsersReply_Error{Error: true}
 				log.Printf("%s\n", err)
 			} else {
-				reply.Reply = &pb.GetUsersReply_User{User: &user}
+				reply.Reply = &pb.GetUsersReply_User{User: user}
 			}
 		}
 
@@ -151,16 +220,50 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 	return nil
 }
 
-func (*UsersServerImpl) UpdateFollowers(ctx context.Context, in *pb.UpdateFollowersRequest) (*pb.GenericUpdateReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateFollowers not implemented")
-}
+func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.EmptyReply, error) {
+	if in.GetFollower() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "'follower' field can't be empty")
+	}
+	if in.GetFollowed() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "'followed' field can't be empty")
+	}
 
-func (*UsersServerImpl) UpdateFollowing(ctx context.Context, in *pb.UpdateFollowedRequest) (*pb.GenericUpdateReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateFollowing not implemented")
+	follower, err := getUser(ctx, in.Follower)
+	if err != nil {
+		return nil, err
+	}
+
+	followed, err := getUser(ctx, in.Followed)
+	if err != nil {
+		return nil, err
+	}
+
+	switch in.GetAction() {
+	case pb.FollowRequest_Follow:
+		if !find(follower.Following, in.Followed) || !find(followed.Followers, in.Follower) {
+			follower.Following = append(follower.Following, in.Followed)
+			followed.Followers = append(followed.Followers, in.Follower)
+		} else {
+			return nil, status.Errorf(codes.AlreadyExists, "'%s' already follows '%s'", in.Follower, in.Followed)
+		}
+	case pb.FollowRequest_Unfollow:
+		follower.Following = remove(follower.Following, in.Followed)
+		followed.Followers = remove(followed.Followers, in.Follower)
+	}
+
+	if err := setUserIfExists(ctx, follower); err != nil {
+		return nil, err
+	}
+
+	if err := setUserIfExists(ctx, followed); err != nil {
+		return nil, err
+	}
+
+	return &pb.EmptyReply{}, nil
 }
 
 func (*UsersServerImpl) UpdateTweets(ctx context.Context, in *pb.UpdateTweetsRequest) (*pb.GenericUpdateReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateTweets not implemented")
+	return &pb.GenericUpdateReply{}, nil
 }
 
 func main() {

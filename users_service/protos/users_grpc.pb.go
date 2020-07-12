@@ -21,8 +21,7 @@ type UsersClient interface {
 	DeleteUser(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*EmptyReply, error)
 	GetUserInfoSummary(ctx context.Context, in *GetSummaryRequest, opts ...grpc.CallOption) (*GetSummaryReply, error)
 	GetUsers(ctx context.Context, in *GetUsersRequest, opts ...grpc.CallOption) (Users_GetUsersClient, error)
-	UpdateFollowers(ctx context.Context, in *UpdateFollowersRequest, opts ...grpc.CallOption) (*GenericUpdateReply, error)
-	UpdateFollowing(ctx context.Context, in *UpdateFollowedRequest, opts ...grpc.CallOption) (*GenericUpdateReply, error)
+	Follow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*EmptyReply, error)
 	UpdateTweets(ctx context.Context, in *UpdateTweetsRequest, opts ...grpc.CallOption) (*GenericUpdateReply, error)
 }
 
@@ -93,18 +92,9 @@ func (x *usersGetUsersClient) Recv() (*GetUsersReply, error) {
 	return m, nil
 }
 
-func (c *usersClient) UpdateFollowers(ctx context.Context, in *UpdateFollowersRequest, opts ...grpc.CallOption) (*GenericUpdateReply, error) {
-	out := new(GenericUpdateReply)
-	err := c.cc.Invoke(ctx, "/users.Users/UpdateFollowers", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *usersClient) UpdateFollowing(ctx context.Context, in *UpdateFollowedRequest, opts ...grpc.CallOption) (*GenericUpdateReply, error) {
-	out := new(GenericUpdateReply)
-	err := c.cc.Invoke(ctx, "/users.Users/UpdateFollowing", in, out, opts...)
+func (c *usersClient) Follow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*EmptyReply, error) {
+	out := new(EmptyReply)
+	err := c.cc.Invoke(ctx, "/users.Users/Follow", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -128,8 +118,7 @@ type UsersServer interface {
 	DeleteUser(context.Context, *DeleteRequest) (*EmptyReply, error)
 	GetUserInfoSummary(context.Context, *GetSummaryRequest) (*GetSummaryReply, error)
 	GetUsers(*GetUsersRequest, Users_GetUsersServer) error
-	UpdateFollowers(context.Context, *UpdateFollowersRequest) (*GenericUpdateReply, error)
-	UpdateFollowing(context.Context, *UpdateFollowedRequest) (*GenericUpdateReply, error)
+	Follow(context.Context, *FollowRequest) (*EmptyReply, error)
 	UpdateTweets(context.Context, *UpdateTweetsRequest) (*GenericUpdateReply, error)
 	mustEmbedUnimplementedUsersServer()
 }
@@ -150,11 +139,8 @@ func (*UnimplementedUsersServer) GetUserInfoSummary(context.Context, *GetSummary
 func (*UnimplementedUsersServer) GetUsers(*GetUsersRequest, Users_GetUsersServer) error {
 	return status.Errorf(codes.Unimplemented, "method GetUsers not implemented")
 }
-func (*UnimplementedUsersServer) UpdateFollowers(context.Context, *UpdateFollowersRequest) (*GenericUpdateReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateFollowers not implemented")
-}
-func (*UnimplementedUsersServer) UpdateFollowing(context.Context, *UpdateFollowedRequest) (*GenericUpdateReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateFollowing not implemented")
+func (*UnimplementedUsersServer) Follow(context.Context, *FollowRequest) (*EmptyReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Follow not implemented")
 }
 func (*UnimplementedUsersServer) UpdateTweets(context.Context, *UpdateTweetsRequest) (*GenericUpdateReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateTweets not implemented")
@@ -240,38 +226,20 @@ func (x *usersGetUsersServer) Send(m *GetUsersReply) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func _Users_UpdateFollowers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateFollowersRequest)
+func _Users_Follow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FollowRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(UsersServer).UpdateFollowers(ctx, in)
+		return srv.(UsersServer).Follow(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/users.Users/UpdateFollowers",
+		FullMethod: "/users.Users/Follow",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(UsersServer).UpdateFollowers(ctx, req.(*UpdateFollowersRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Users_UpdateFollowing_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateFollowedRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(UsersServer).UpdateFollowing(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/users.Users/UpdateFollowing",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(UsersServer).UpdateFollowing(ctx, req.(*UpdateFollowedRequest))
+		return srv.(UsersServer).Follow(ctx, req.(*FollowRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -311,12 +279,8 @@ var _Users_serviceDesc = grpc.ServiceDesc{
 			Handler:    _Users_GetUserInfoSummary_Handler,
 		},
 		{
-			MethodName: "UpdateFollowers",
-			Handler:    _Users_UpdateFollowers_Handler,
-		},
-		{
-			MethodName: "UpdateFollowing",
-			Handler:    _Users_UpdateFollowing_Handler,
+			MethodName: "Follow",
+			Handler:    _Users_Follow_Handler,
 		},
 		{
 			MethodName: "UpdateTweets",

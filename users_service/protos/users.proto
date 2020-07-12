@@ -43,12 +43,12 @@ message GetSummaryReply {
   int64 tweets_count = 8;
 }
 
-message GetUsersRequest {
-  enum Role {
-    Follower = 0;
-    Followed = 1;
-  }
+enum Role {
+  Follower = 0;
+  Followed = 1;
+}
 
+message GetUsersRequest {
   string username = 1;
   Role role = 2;
 }
@@ -60,24 +60,25 @@ message GetUsersReply {
   }
 }
 
-enum Action {
-  Add = 0;
-  Del = 1;
-}
+message FollowRequest {
+  enum Action {
+    Follow = 0;
+    Unfollow = 1;
+  }
 
-message UpdateFollowersRequest {
   Action action = 1;
-  repeated string follower = 2;
+  string follower = 2;
+  string followed = 3;
 }
-
-message UpdateFollowedRequest {
-  Action action = 1;
-  repeated string followed = 2;
-}
-
 message UpdateTweetsRequest {
+  enum Action {
+    Add = 0;
+    Del = 1;
+  }
+
   Action action = 1;
-  repeated int64 tweet = 2;
+  string username = 2;
+  repeated int64 tweet = 3;
 }
 
 message GenericUpdateReply {
@@ -96,8 +97,7 @@ service Users {
 
   rpc GetUsers(GetUsersRequest) returns (stream GetUsersReply);
 
-  rpc UpdateFollowers(UpdateFollowersRequest) returns (GenericUpdateReply);
-  rpc UpdateFollowing(UpdateFollowedRequest) returns (GenericUpdateReply);
+  rpc Follow(FollowRequest) returns (EmptyReply);
 
   rpc UpdateTweets(UpdateTweetsRequest) returns (GenericUpdateReply);
 }
