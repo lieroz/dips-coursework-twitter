@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
+	"os"
+	"strings"
 	"time"
 
-	"github.com/go-redis/redis/v8"
-	"github.com/golang/protobuf/proto"
+	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -16,46 +19,12 @@ import (
 )
 
 var (
-	rdb *redis.ClusterClient
+	pool *pgxpool.Pool
 )
 
 const (
 	port = ":8001"
 )
-
-func getUser(ctx context.Context, username string) (*pb.User, error) {
-	message, err := rdb.Get(ctx, username).Result()
-	if err != nil {
-		if err == redis.Nil {
-			return nil, status.Errorf(codes.NotFound, "user with username: '%s' doesn't exist", username)
-		}
-		return nil, status.Errorf(codes.Internal, "%s", err)
-	}
-
-	var user pb.User
-	if err = proto.Unmarshal([]byte(message), &user); err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
-	}
-
-	return &user, nil
-}
-
-func setUserIfExists(ctx context.Context, user *pb.User) error {
-	message, err := proto.Marshal(user)
-	if err != nil {
-		return status.Errorf(codes.Internal, "%s", err)
-	}
-
-	exists, err := rdb.SetXX(ctx, user.Username, message, 0).Result()
-	if err != nil {
-		return status.Errorf(codes.Internal, "%s", err)
-	}
-	if !exists {
-		return status.Errorf(codes.AlreadyExists, "user with username: '%s' already exists", user.Username)
-	}
-
-	return nil
-}
 
 func remove(s []string, r string) []string {
 	for i, v := range s {
@@ -96,95 +65,103 @@ type UsersServerImpl struct {
 	pb.UnimplementedUsersServer
 }
 
-func (*UsersServerImpl) CreateUser(ctx context.Context, in *pb.CreateRequest) (*pb.EmptyReply, error) {
+func (*UsersServerImpl) CreateUser(ctx context.Context, in *pb.CreateRequest) (*pb.Empty, error) {
 	if in.GetUsername() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "'username' field can't be empty")
 	}
 
-	user := pb.User{
-		Username:              in.Username,
-		Firstname:             in.Firstname,
-		Lastname:              in.Lastname,
-		Description:           in.Description,
-		RegistrationTimestamp: time.Now().Unix(),
-	}
+	cmdTag, err := pool.Exec(ctx,
+		"insert into users (username, firstname, lastname, description) values ($1, $2, $3, $4) on conflict do nothing",
+		in.GetUsername(),
+		in.GetFirstname(),
+		in.GetLastname(), in.GetDescription(),
+	)
 
-	userProto, err := proto.Marshal(&user)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	notExists, err := rdb.SetNX(ctx, in.Username, userProto, 0).Result()
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
-	}
-	if !notExists {
+	if cmdTag.RowsAffected() == 0 {
 		return nil, status.Errorf(codes.AlreadyExists, "user with username: '%s' already exists", in.Username)
 	}
-	return &pb.EmptyReply{}, nil
+
+	return &pb.Empty{}, nil
 }
 
-// TODO: Add delete for tweets
-func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*pb.EmptyReply, error) {
+func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*pb.Empty, error) {
 	if in.GetUsername() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "'username' field can't be empty")
 	}
 
-	user, err := getUser(ctx, in.Username)
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var followers, following []string
+	var tweets []int
+
+	if err = tx.QueryRow(ctx, "delete from users where username = $1 returning followers, following, tweets",
+		in.GetUsername()).Scan(
+		&followers,
+		&following,
+		&tweets,
+	); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	followers := user.GetFollowers()
-	following := user.GetFollowing()
-
-	// FIXME: here data may stay inconsistent and it is not very highload friendly
 	for _, follower := range followers {
-		if user, err = getUser(ctx, follower); err != nil {
-			return nil, err
-		}
-		user.Following = remove(user.Following, in.Username)
-		if err = setUserIfExists(ctx, user); err != nil {
-			return nil, err
+		if _, err = tx.Exec(ctx, "update users set following = array_remove(following, $1) where username = $2",
+			in.GetUsername(), follower); err != nil {
+			return nil, status.Errorf(codes.Internal, "%s", err)
 		}
 	}
 
 	for _, followed := range following {
-		if user, err = getUser(ctx, followed); err != nil {
-			return nil, err
-		}
-		user.Followers = remove(user.Followers, in.Username)
-		if err = setUserIfExists(ctx, user); err != nil {
-			return nil, err
+		if _, err = tx.Exec(ctx, "update users set followers = array_remove(followers, $1) where username = $2",
+			in.GetUsername(), followed); err != nil {
+			return nil, status.Errorf(codes.Internal, "%s", err)
 		}
 	}
 
-	if err := rdb.Del(ctx, in.Username).Err(); err != nil {
+	if err = tx.Commit(ctx); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
-	return &pb.EmptyReply{}, nil
+
+	return &pb.Empty{}, nil
 }
 
 func (*UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummaryRequest) (*pb.GetSummaryReply, error) {
 	if in.GetUsername() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "username field can't be empty")
+		return nil, status.Errorf(codes.InvalidArgument, "'username' field can't be empty")
 	}
 
-	user, err := getUser(ctx, in.Username)
+	var timestamp time.Time
+
+	summary := &pb.GetSummaryReply{}
+	err := pool.QueryRow(ctx, `select username, firstname, lastname, description,
+		registration_timestamp, cardinality(followers), cardinality(following), cardinality(tweets)
+		from users where username = $1`, in.GetUsername()).Scan(
+		&summary.Username,
+		&summary.Firstname,
+		&summary.Lastname,
+		&summary.Description,
+		&timestamp,
+		&summary.FollowersCount,
+		&summary.FollowingCount,
+		&summary.TweetsCount,
+	)
+
 	if err != nil {
-		return nil, err
+		if err == pgx.ErrNoRows {
+			return nil, status.Errorf(codes.NotFound, "user with username: '%s' doesn't exist", in.GetUsername())
+		}
+		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	return &pb.GetSummaryReply{
-		Username:              user.Username,
-		Firstname:             user.Firstname,
-		Lastname:              user.Lastname,
-		Description:           user.Description,
-		RegistrationTimestamp: user.RegistrationTimestamp,
-		FollowersCount:        int64(len(user.Followers)),
-		FollowingCount:        int64(len(user.Following)),
-		TweetsCount:           int64(len(user.Tweets)),
-	}, nil
+	summary.RegistrationTimestamp = timestamp.Unix()
+	return summary, nil
 }
 
 func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUsersServer) error {
@@ -192,52 +169,60 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 		return status.Errorf(codes.InvalidArgument, "'username' field can't be empty")
 	}
 
-	var userProto string
-	var err error
-	ctx := context.TODO()
-
-	user, err := getUser(ctx, in.Username)
-	if err != nil {
-		return err
-	}
-
-	var usernames []string
+	query := "select %s from users where username = $1"
 	switch in.GetRole() {
 	case pb.Role_Follower:
-		usernames = user.GetFollowers()
+		query = fmt.Sprintf(query, "followers")
 	case pb.Role_Followed:
-		usernames = user.GetFollowing()
+		query = fmt.Sprintf(query, "following")
 	}
 
-	var reply pb.GetUsersReply
-	//FIXME: this is not very highload friendly
-	for _, username := range usernames {
-		userProto, err = rdb.Get(ctx, username).Result()
-		if err != nil {
-			if err == redis.Nil {
-				log.Printf("user with username: '%s' doesn't exist\n", username)
-			} else {
-				log.Printf("%s\n", err)
-			}
-			reply.Reply = &pb.GetUsersReply_Error{Error: true}
-		} else {
-			if err = proto.Unmarshal([]byte(userProto), user); err != nil {
-				reply.Reply = &pb.GetUsersReply_Error{Error: true}
-				log.Printf("%s\n", err)
-			} else {
-				reply.Reply = &pb.GetUsersReply_User{User: user}
-			}
-		}
+	var users []string
+	if err := pool.QueryRow(context.Background(), query,
+		in.GetUsername()).Scan(&users); err != nil {
+		return status.Errorf(codes.Internal, "%s", err)
+	}
 
-		if err = stream.Send(&reply); err != nil {
-			return err
+	query = fmt.Sprintf("select * from users where username in ('%s')", strings.Join(users[:], "', '"))
+	rows, err := pool.Query(context.Background(), query)
+	if err != nil {
+		return status.Errorf(codes.Internal, "%s", err)
+	}
+
+	user := pb.User{}
+	var timestamp time.Time
+	var reply pb.GetUsersReply
+
+	for rows.Next() {
+		if err = rows.Scan(
+			&user.Username,
+			&user.Firstname,
+			&user.Lastname,
+			&user.Description,
+			&timestamp,
+			&user.Followers,
+			&user.Following,
+			&user.Tweets,
+		); err != nil {
+			reply.Reply = &pb.GetUsersReply_Error{Error: true}
+			log.Println(err)
+		} else {
+			user.RegistrationTimestamp = timestamp.Unix()
+			reply.Reply = &pb.GetUsersReply_User{User: &user}
+			if err = stream.Send(&reply); err != nil {
+				return status.Errorf(codes.Internal, "%s", err)
+			}
 		}
+	}
+
+	if rows.Err() != nil {
+		return status.Errorf(codes.Internal, "%s", rows.Err())
 	}
 
 	return nil
 }
 
-func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.EmptyReply, error) {
+func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.Empty, error) {
 	if in.GetFollower() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "'follower' field can't be empty")
 	}
@@ -245,62 +230,31 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 		return nil, status.Errorf(codes.InvalidArgument, "'followed' field can't be empty")
 	}
 
-	follower, err := getUser(ctx, in.Follower)
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+	defer tx.Rollback(ctx)
+
+	query := func(v string) string {
+		return fmt.Sprintf("update users set %[1]v = array_append(%[1]v, $1) where username = $2 and exists (select 1 from users where username = $2)", v)
 	}
 
-	followed, err := getUser(ctx, in.Followed)
-	if err != nil {
-		return nil, err
+	if _, err = tx.Exec(ctx, fmt.Sprintf(query("following")),
+		in.GetFollowed(), in.GetFollower()); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	switch in.GetAction() {
-	case pb.FollowRequest_Follow:
-		if !find(follower.Following, in.Followed) || !find(followed.Followers, in.Follower) {
-			follower.Following = append(follower.Following, in.Followed)
-			followed.Followers = append(followed.Followers, in.Follower)
-		} else {
-			return nil, status.Errorf(codes.AlreadyExists, "'%s' already follows '%s'", in.Follower, in.Followed)
-		}
-	case pb.FollowRequest_Unfollow:
-		follower.Following = remove(follower.Following, in.Followed)
-		followed.Followers = remove(followed.Followers, in.Follower)
+	if _, err = tx.Exec(ctx, fmt.Sprintf(query("followers")),
+		in.GetFollower(), in.GetFollowed()); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	if err := setUserIfExists(ctx, follower); err != nil {
-		return nil, err
+	if err = tx.Commit(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	if err := setUserIfExists(ctx, followed); err != nil {
-		return nil, err
-	}
-
-	return &pb.EmptyReply{}, nil
-}
-
-func (*UsersServerImpl) UpdateTweets(ctx context.Context, in *pb.UpdateTweetsRequest) (*pb.EmptyReply, error) {
-	if in.GetUsername() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "'username' field can't be empty")
-	}
-
-	user, err := getUser(ctx, in.Username)
-	if err != nil {
-		return nil, err
-	}
-
-	switch in.GetAction() {
-	case pb.UpdateTweetsRequest_Add:
-		user.Tweets = append(user.Tweets, in.Tweets...)
-	case pb.UpdateTweetsRequest_Del:
-		user.Tweets = diff(user.Tweets, in.Tweets)
-	}
-
-	if err := setUserIfExists(ctx, user); err != nil {
-		return nil, err
-	}
-
-	return &pb.EmptyReply{}, nil
+	return &pb.Empty{}, nil
 }
 
 func main() {
@@ -308,11 +262,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	}
-
 	log.Printf("Start listening on: %s", port)
-	rdb = redis.NewClusterClient(&redis.ClusterOptions{
-		Addrs: []string{":7000", ":7001", ":7002", ":7003", ":7004", ":7005"},
-	})
+
+	pool, err = pgxpool.Connect(context.Background(), os.Getenv("DATABASE_URL"))
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
 
 	s := grpc.NewServer()
 	pb.RegisterUsersServer(s, &UsersServerImpl{})

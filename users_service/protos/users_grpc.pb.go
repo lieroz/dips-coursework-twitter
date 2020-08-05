@@ -17,12 +17,12 @@ const _ = grpc.SupportPackageIsVersion6
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type UsersClient interface {
-	CreateUser(ctx context.Context, in *CreateRequest, opts ...grpc.CallOption) (*EmptyReply, error)
-	DeleteUser(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*EmptyReply, error)
+	CreateUser(ctx context.Context, in *CreateRequest, opts ...grpc.CallOption) (*Empty, error)
+	DeleteUser(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetUserInfoSummary(ctx context.Context, in *GetSummaryRequest, opts ...grpc.CallOption) (*GetSummaryReply, error)
 	GetUsers(ctx context.Context, in *GetUsersRequest, opts ...grpc.CallOption) (Users_GetUsersClient, error)
-	Follow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*EmptyReply, error)
-	UpdateTweets(ctx context.Context, in *UpdateTweetsRequest, opts ...grpc.CallOption) (*EmptyReply, error)
+	Follow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*Empty, error)
+	UpdateTweets(ctx context.Context, in *UpdateTweetsRequest, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type usersClient struct {
@@ -33,8 +33,8 @@ func NewUsersClient(cc grpc.ClientConnInterface) UsersClient {
 	return &usersClient{cc}
 }
 
-func (c *usersClient) CreateUser(ctx context.Context, in *CreateRequest, opts ...grpc.CallOption) (*EmptyReply, error) {
-	out := new(EmptyReply)
+func (c *usersClient) CreateUser(ctx context.Context, in *CreateRequest, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
 	err := c.cc.Invoke(ctx, "/users.Users/CreateUser", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -42,8 +42,8 @@ func (c *usersClient) CreateUser(ctx context.Context, in *CreateRequest, opts ..
 	return out, nil
 }
 
-func (c *usersClient) DeleteUser(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*EmptyReply, error) {
-	out := new(EmptyReply)
+func (c *usersClient) DeleteUser(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
 	err := c.cc.Invoke(ctx, "/users.Users/DeleteUser", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -92,8 +92,8 @@ func (x *usersGetUsersClient) Recv() (*GetUsersReply, error) {
 	return m, nil
 }
 
-func (c *usersClient) Follow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*EmptyReply, error) {
-	out := new(EmptyReply)
+func (c *usersClient) Follow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
 	err := c.cc.Invoke(ctx, "/users.Users/Follow", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -101,8 +101,8 @@ func (c *usersClient) Follow(ctx context.Context, in *FollowRequest, opts ...grp
 	return out, nil
 }
 
-func (c *usersClient) UpdateTweets(ctx context.Context, in *UpdateTweetsRequest, opts ...grpc.CallOption) (*EmptyReply, error) {
-	out := new(EmptyReply)
+func (c *usersClient) UpdateTweets(ctx context.Context, in *UpdateTweetsRequest, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
 	err := c.cc.Invoke(ctx, "/users.Users/UpdateTweets", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -114,12 +114,12 @@ func (c *usersClient) UpdateTweets(ctx context.Context, in *UpdateTweetsRequest,
 // All implementations must embed UnimplementedUsersServer
 // for forward compatibility
 type UsersServer interface {
-	CreateUser(context.Context, *CreateRequest) (*EmptyReply, error)
-	DeleteUser(context.Context, *DeleteRequest) (*EmptyReply, error)
+	CreateUser(context.Context, *CreateRequest) (*Empty, error)
+	DeleteUser(context.Context, *DeleteRequest) (*Empty, error)
 	GetUserInfoSummary(context.Context, *GetSummaryRequest) (*GetSummaryReply, error)
 	GetUsers(*GetUsersRequest, Users_GetUsersServer) error
-	Follow(context.Context, *FollowRequest) (*EmptyReply, error)
-	UpdateTweets(context.Context, *UpdateTweetsRequest) (*EmptyReply, error)
+	Follow(context.Context, *FollowRequest) (*Empty, error)
+	UpdateTweets(context.Context, *UpdateTweetsRequest) (*Empty, error)
 	mustEmbedUnimplementedUsersServer()
 }
 
@@ -127,10 +127,10 @@ type UsersServer interface {
 type UnimplementedUsersServer struct {
 }
 
-func (*UnimplementedUsersServer) CreateUser(context.Context, *CreateRequest) (*EmptyReply, error) {
+func (*UnimplementedUsersServer) CreateUser(context.Context, *CreateRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateUser not implemented")
 }
-func (*UnimplementedUsersServer) DeleteUser(context.Context, *DeleteRequest) (*EmptyReply, error) {
+func (*UnimplementedUsersServer) DeleteUser(context.Context, *DeleteRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteUser not implemented")
 }
 func (*UnimplementedUsersServer) GetUserInfoSummary(context.Context, *GetSummaryRequest) (*GetSummaryReply, error) {
@@ -139,10 +139,10 @@ func (*UnimplementedUsersServer) GetUserInfoSummary(context.Context, *GetSummary
 func (*UnimplementedUsersServer) GetUsers(*GetUsersRequest, Users_GetUsersServer) error {
 	return status.Errorf(codes.Unimplemented, "method GetUsers not implemented")
 }
-func (*UnimplementedUsersServer) Follow(context.Context, *FollowRequest) (*EmptyReply, error) {
+func (*UnimplementedUsersServer) Follow(context.Context, *FollowRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Follow not implemented")
 }
-func (*UnimplementedUsersServer) UpdateTweets(context.Context, *UpdateTweetsRequest) (*EmptyReply, error) {
+func (*UnimplementedUsersServer) UpdateTweets(context.Context, *UpdateTweetsRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateTweets not implemented")
 }
 func (*UnimplementedUsersServer) mustEmbedUnimplementedUsersServer() {}
@@ -294,5 +294,5 @@ var _Users_serviceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "users.proto",
+	Metadata: "protos/users.proto",
 }

@@ -15,7 +15,7 @@ message User {
   repeated int64 tweets = 8;
 }
 
-message EmptyReply {}
+message Empty {}
 
 message CreateRequest {
   string username = 1;
@@ -82,13 +82,13 @@ message UpdateTweetsRequest {
 }
 
 service Users {
-  rpc CreateUser(CreateRequest) returns (EmptyReply);
-  rpc DeleteUser(DeleteRequest) returns (EmptyReply);
+  rpc CreateUser(CreateRequest) returns (Empty);
+  rpc DeleteUser(DeleteRequest) returns (Empty);
   rpc GetUserInfoSummary(GetSummaryRequest) returns (GetSummaryReply);
 
   rpc GetUsers(GetUsersRequest) returns (stream GetUsersReply);
 
-  rpc Follow(FollowRequest) returns (EmptyReply);
+  rpc Follow(FollowRequest) returns (Empty);
 
-  rpc UpdateTweets(UpdateTweetsRequest) returns (EmptyReply);
+  rpc UpdateTweets(UpdateTweetsRequest) returns (Empty);
 }
