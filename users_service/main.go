@@ -26,41 +26,6 @@ const (
 	port = ":8001"
 )
 
-func remove(s []string, r string) []string {
-	for i, v := range s {
-		if v == r {
-			return append(s[:i], s[i+1:]...)
-		}
-	}
-	return s
-}
-
-func find(s []string, r string) bool {
-	for _, v := range s {
-		if v == r {
-			return true
-		}
-	}
-	return false
-}
-
-func diff(lhs, rhs []int64) []int64 {
-	var result []int64
-	for _, l := range lhs {
-		found := false
-		for _, r := range rhs {
-			if l == r {
-				found = true
-			}
-		}
-
-		if !found {
-			result = append(result, l)
-		}
-	}
-	return result
-}
-
 type UsersServerImpl struct {
 	pb.UnimplementedUsersServer
 }
