@@ -171,8 +171,7 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 			&timestamp,
 			&user.Followers,
 			&user.Following,
-			&user.Tweets,
-		); err != nil {
+			&user.Tweets); err != nil {
 			reply.Reply = &pb.GetUsersReply_Error{Error: true}
 			log.Println(err)
 		} else {

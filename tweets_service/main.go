@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	// "fmt"
+	"fmt"
 	"log"
 	"net"
 	"os"
-	// "strings"
-	// "time"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -47,8 +47,9 @@ func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequ
 	var id int
 	// https://stackoverflow.com/questions/31733790/postgresql-parameter-issue-1
 	err = pool.QueryRow(ctx,
-		`insert into tweets (creator, content) select $1::varchar, $2 
-			where exists (select 1 from users where username = $1) returning id`,
+		`insert into tweets (parent_id, creator, content) select $1, $2::varchar, $3 
+			where exists (select 1 from users where username = $2) returning id`,
+		in.GetParentId(),
 		in.GetCreator(),
 		in.GetContent(),
 	).Scan(&id)
@@ -76,10 +77,60 @@ func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequ
 }
 
 func (*TweetsServerImpl) GetTweets(in *pb.GetTweetsRequest, stream pb.Tweets_GetTweetsServer) error {
+	if in.GetTweets() == nil {
+		return status.Errorf(codes.InvalidArgument, "'tweets' field can't be empty")
+	}
+
+	query := fmt.Sprintf("select * from tweets where id in (%s)",
+		strings.Trim(strings.Replace(fmt.Sprint(in.GetTweets()), " ", ", ", -1), "[]"))
+	rows, err := pool.Query(context.Background(), query)
+	if err != nil {
+		return status.Errorf(codes.Internal, "%s", err)
+	}
+
+	tweet := pb.Tweet{}
+	var timestamp time.Time
+	var reply pb.GetTweetsReply
+
+	for rows.Next() {
+		if err = rows.Scan(
+			&tweet.Id,
+			&tweet.ParentId,
+			&tweet.Creator,
+			&tweet.Content,
+			&timestamp); err != nil {
+			reply.Reply = &pb.GetTweetsReply_Error{Error: true}
+			log.Println(err)
+		} else {
+			tweet.CreationTimestamp = timestamp.Unix()
+			reply.Reply = &pb.GetTweetsReply_Tweet{Tweet: &tweet}
+			if err = stream.Send(&reply); err != nil {
+				return status.Errorf(codes.Internal, "%s", err)
+			}
+		}
+	}
+
 	return nil
 }
 
 func (*TweetsServerImpl) EditTweet(ctx context.Context, in *pb.EditTweetRequest) (*pb.Empty, error) {
+	if in.GetId() == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "'id' field can't be omitted")
+	}
+	if in.GetContent() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "'content' field can't be empty")
+	}
+
+	if cmdTag, err := pool.Exec(ctx, "update tweets set content = $1 where id = $2 and parent_id = 0",
+		in.GetContent(), in.GetId()); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	} else {
+		if cmdTag.RowsAffected() == 0 {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"retweeted tweet can't be updated")
+		}
+	}
+
 	return &pb.Empty{}, nil
 }
 
