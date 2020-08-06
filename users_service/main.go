@@ -76,18 +76,16 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	for _, follower := range followers {
-		if _, err = tx.Exec(ctx, "update users set following = array_remove(following, $1) where username = $2",
-			in.GetUsername(), follower); err != nil {
-			return nil, status.Errorf(codes.Internal, "%s", err)
-		}
+	query := func(field, users string) string {
+		return fmt.Sprintf("update users set %[1]v = array_remove(%[1]v , $1) where username in ('%[2]v')", field, users)
 	}
 
-	for _, followed := range following {
-		if _, err = tx.Exec(ctx, "update users set followers = array_remove(followers, $1) where username = $2",
-			in.GetUsername(), followed); err != nil {
-			return nil, status.Errorf(codes.Internal, "%s", err)
-		}
+	if _, err = tx.Exec(ctx, query("following", strings.Join(followers[:], "', '")), in.GetUsername()); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+
+	if _, err = tx.Exec(ctx, query("followers", strings.Join(following[:], "', '")), in.GetUsername()); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
 	if err = tx.Commit(ctx); err != nil {
