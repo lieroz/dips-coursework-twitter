@@ -70,16 +70,6 @@ message FollowRequest {
   string follower = 2;
   string followed = 3;
 }
-message UpdateTweetsRequest {
-  enum Action {
-    Add = 0;
-    Del = 1;
-  }
-
-  Action action = 1;
-  string username = 2;
-  repeated int64 tweets = 3;
-}
 
 service Users {
   rpc CreateUser(CreateRequest) returns (Empty);
@@ -89,6 +79,4 @@ service Users {
   rpc GetUsers(GetUsersRequest) returns (stream GetUsersReply);
 
   rpc Follow(FollowRequest) returns (Empty);
-
-  rpc UpdateTweets(UpdateTweetsRequest) returns (Empty);
 }

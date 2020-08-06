@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+option go_package = "github.com/lieroz/dips-coursework-twitter/tweets_service;protos";
+
+package tweets;
+
+message Tweet {
+  int64 id = 1;
+  int64 parent_id = 2;
+  string creator = 3;
+  string content = 4;
+  int64 creation_timestamp = 5;
+}
+
+message Empty {}
+
+message CreateTweetRequest {
+  int64 parent_id = 1;
+  string creator = 2;
+  string content = 3;
+}
+
+message GetTweetsRequest {
+  repeated int64 tweets = 1;
+}
+
+message GetTweetsReply {
+  oneof reply {
+    Tweet tweet = 1;
+    bool error = 2;
+  }
+}
+
+message EditTweetRequest {
+  int64 id = 1;
+  string text = 2;
+}
+
+message DeleteTweetsRequest {
+  repeated int64 id = 1;
+}
+
+service Tweets {
+  rpc CreateTweet(CreateTweetRequest) returns (Empty);
+  rpc GetTweets(GetTweetsRequest) returns (stream GetTweetsReply);
+  rpc EditTweet(EditTweetRequest) returns (Empty);
+  rpc DeleteTweet(DeleteTweetsRequest) returns (Empty);
+}

@@ -39,7 +39,8 @@ func (*UsersServerImpl) CreateUser(ctx context.Context, in *pb.CreateRequest) (*
 		"insert into users (username, firstname, lastname, description) values ($1, $2, $3, $4) on conflict do nothing",
 		in.GetUsername(),
 		in.GetFirstname(),
-		in.GetLastname(), in.GetDescription(),
+		in.GetLastname(),
+		in.GetDescription(),
 	)
 
 	if err != nil {
@@ -67,7 +68,8 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 	var followers, following []string
 	var tweets []int
 
-	if err = tx.QueryRow(ctx, "delete from users where username = $1 returning followers, following, tweets",
+	if err = tx.QueryRow(ctx,
+		"delete from users where username = $1 returning followers, following, tweets",
 		in.GetUsername()).Scan(
 		&followers,
 		&following,
@@ -77,14 +79,17 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 	}
 
 	query := func(field, users string) string {
-		return fmt.Sprintf("update users set %[1]v = array_remove(%[1]v , $1) where username in ('%[2]v')", field, users)
+		return fmt.Sprintf("update users set %[1]v = array_remove(%[1]v , $1) where username in ('%[2]v')",
+			field, users)
 	}
 
-	if _, err = tx.Exec(ctx, query("following", strings.Join(followers[:], "', '")), in.GetUsername()); err != nil {
+	if _, err = tx.Exec(ctx, query("following", strings.Join(followers[:], "', '")),
+		in.GetUsername()); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	if _, err = tx.Exec(ctx, query("followers", strings.Join(following[:], "', '")), in.GetUsername()); err != nil {
+	if _, err = tx.Exec(ctx, query("followers", strings.Join(following[:], "', '")),
+		in.GetUsername()); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
@@ -118,7 +123,8 @@ func (*UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummar
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return nil, status.Errorf(codes.NotFound, "user with username: '%s' doesn't exist", in.GetUsername())
+			return nil, status.Errorf(codes.NotFound,
+				"user with username: '%s' doesn't exist", in.GetUsername())
 		}
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
@@ -200,17 +206,30 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 	defer tx.Rollback(ctx)
 
 	query := func(v string) string {
-		return fmt.Sprintf("update users set %[1]v = array_append(%[1]v, $1) where username = $2 and exists (select 1 from users where username = $2)", v)
+		return fmt.Sprintf(`update users set %[1]v = array_append(%[1]v, $1) where username = $2 
+			and exists (select 1 from users where username = $2)`, v)
 	}
 
-	if _, err = tx.Exec(ctx, fmt.Sprintf(query("following")),
+	if cmdTag, err := tx.Exec(ctx, fmt.Sprintf(query("following")),
 		in.GetFollowed(), in.GetFollower()); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
+	} else {
+		if cmdTag.RowsAffected() == 0 {
+			return nil, status.Errorf(codes.NotFound,
+				"user with username: '%s' doesn't exist and can't follow '%s'",
+				in.GetFollower(), in.GetFollowed())
+		}
 	}
 
-	if _, err = tx.Exec(ctx, fmt.Sprintf(query("followers")),
+	if cmdTag, err := tx.Exec(ctx, fmt.Sprintf(query("followers")),
 		in.GetFollower(), in.GetFollowed()); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
+	} else {
+		if cmdTag.RowsAffected() == 0 {
+			return nil, status.Errorf(codes.NotFound,
+				"user with username: '%s' doesn't exist and can't be followed by '%s'",
+				in.GetFollowed(), in.GetFollower())
+		}
 	}
 
 	if err = tx.Commit(ctx); err != nil {

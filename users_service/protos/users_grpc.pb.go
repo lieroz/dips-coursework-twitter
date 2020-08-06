@@ -22,7 +22,6 @@ type UsersClient interface {
 	GetUserInfoSummary(ctx context.Context, in *GetSummaryRequest, opts ...grpc.CallOption) (*GetSummaryReply, error)
 	GetUsers(ctx context.Context, in *GetUsersRequest, opts ...grpc.CallOption) (Users_GetUsersClient, error)
 	Follow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*Empty, error)
-	UpdateTweets(ctx context.Context, in *UpdateTweetsRequest, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type usersClient struct {
@@ -101,15 +100,6 @@ func (c *usersClient) Follow(ctx context.Context, in *FollowRequest, opts ...grp
 	return out, nil
 }
 
-func (c *usersClient) UpdateTweets(ctx context.Context, in *UpdateTweetsRequest, opts ...grpc.CallOption) (*Empty, error) {
-	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/users.Users/UpdateTweets", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // UsersServer is the server API for Users service.
 // All implementations must embed UnimplementedUsersServer
 // for forward compatibility
@@ -119,7 +109,6 @@ type UsersServer interface {
 	GetUserInfoSummary(context.Context, *GetSummaryRequest) (*GetSummaryReply, error)
 	GetUsers(*GetUsersRequest, Users_GetUsersServer) error
 	Follow(context.Context, *FollowRequest) (*Empty, error)
-	UpdateTweets(context.Context, *UpdateTweetsRequest) (*Empty, error)
 	mustEmbedUnimplementedUsersServer()
 }
 
@@ -141,9 +130,6 @@ func (*UnimplementedUsersServer) GetUsers(*GetUsersRequest, Users_GetUsersServer
 }
 func (*UnimplementedUsersServer) Follow(context.Context, *FollowRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Follow not implemented")
-}
-func (*UnimplementedUsersServer) UpdateTweets(context.Context, *UpdateTweetsRequest) (*Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateTweets not implemented")
 }
 func (*UnimplementedUsersServer) mustEmbedUnimplementedUsersServer() {}
 
@@ -244,24 +230,6 @@ func _Users_Follow_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Users_UpdateTweets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateTweetsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(UsersServer).UpdateTweets(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/users.Users/UpdateTweets",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(UsersServer).UpdateTweets(ctx, req.(*UpdateTweetsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 var _Users_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "users.Users",
 	HandlerType: (*UsersServer)(nil),
@@ -281,10 +249,6 @@ var _Users_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Follow",
 			Handler:    _Users_Follow_Handler,
-		},
-		{
-			MethodName: "UpdateTweets",
-			Handler:    _Users_UpdateTweets_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
