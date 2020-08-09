@@ -6,5 +6,6 @@ create table if not exists users (
     registration_timestamp timestamptz default current_timestamp,
     followers varchar(20)[] default array[]::varchar(20)[],
     following varchar(20)[] default array[]::varchar(20)[],
-    tweets integer[] default array[]::integer[]
+    tweets integer[] default array[]::integer[],
+    timeline integer[] default array[]::integer[]
 );

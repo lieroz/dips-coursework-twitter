@@ -152,7 +152,9 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 		return status.Errorf(codes.Internal, "%s", err)
 	}
 
-	query = fmt.Sprintf("select * from users where username in ('%s')", strings.Join(users[:], "', '"))
+	query = fmt.Sprintf(`select username, firstname, lastname, description, 
+		registration_timestamp, followers, following, tweets 
+		from users where username in ('%s')`, strings.Join(users[:], "', '"))
 	rows, err := pool.Query(context.Background(), query)
 	if err != nil {
 		return status.Errorf(codes.Internal, "%s", err)
