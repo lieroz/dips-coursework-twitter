@@ -193,7 +193,6 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 	return nil
 }
 
-// TODO: add followed timeline to follower timeline and sort by timestamp
 func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.Empty, error) {
 	if in.GetFollower() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "'follower' field can't be empty")
@@ -213,25 +212,36 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 			and exists (select 1 from users where username = $2)`, v)
 	}
 
-	if cmdTag, err := tx.Exec(ctx, fmt.Sprintf(query("following")),
-		in.GetFollowed(), in.GetFollower()); err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
-	} else {
-		if cmdTag.RowsAffected() == 0 {
+	var timeline []int
+	if err = tx.QueryRow(ctx, fmt.Sprintf(query("following"))+" returning timeline",
+		in.GetFollowed(), in.GetFollower()).Scan(&timeline); err != nil {
+		if err == pgx.ErrNoRows {
 			return nil, status.Errorf(codes.NotFound,
 				"user with username: '%s' doesn't exist and can't follow '%s'",
 				in.GetFollower(), in.GetFollowed())
 		}
+		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	if cmdTag, err := tx.Exec(ctx, fmt.Sprintf(query("followers")),
-		in.GetFollower(), in.GetFollowed()); err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
-	} else {
-		if cmdTag.RowsAffected() == 0 {
+	var tweets []int
+	if err = tx.QueryRow(ctx, fmt.Sprintf(query("followers"))+" returning tweets",
+		in.GetFollower(), in.GetFollowed()).Scan(&tweets); err != nil {
+		if err == pgx.ErrNoRows {
 			return nil, status.Errorf(codes.NotFound,
 				"user with username: '%s' doesn't exist and can't be followed by '%s'",
 				in.GetFollowed(), in.GetFollower())
+		}
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+
+	timeline = append(timeline, tweets...)
+
+	if len(timeline) != 0 {
+		if _, err = tx.Exec(ctx, fmt.Sprintf(`update users set timeline = array(select id from tweets
+		where id in (%s) group by id order by creation_timestamp) where username = $1`,
+			strings.Trim(strings.Replace(fmt.Sprint(timeline), " ", ", ", -1), "[]")),
+			in.GetFollower()); err != nil {
+			return nil, status.Errorf(codes.Internal, "%s", err)
 		}
 	}
 

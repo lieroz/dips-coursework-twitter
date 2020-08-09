@@ -61,14 +61,8 @@ message GetUsersReply {
 }
 
 message FollowRequest {
-  enum Action {
-    Follow = 0;
-    Unfollow = 1;
-  }
-
-  Action action = 1;
-  string follower = 2;
-  string followed = 3;
+  string follower = 1;
+  string followed = 2;
 }
 
 service Users {
@@ -79,4 +73,5 @@ service Users {
   rpc GetUsers(GetUsersRequest) returns (stream GetUsersReply);
 
   rpc Follow(FollowRequest) returns (Empty);
+  rpc Unfollow(FollowRequest) returns (Empty);
 }

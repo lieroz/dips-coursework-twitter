@@ -22,6 +22,7 @@ type UsersClient interface {
 	GetUserInfoSummary(ctx context.Context, in *GetSummaryRequest, opts ...grpc.CallOption) (*GetSummaryReply, error)
 	GetUsers(ctx context.Context, in *GetUsersRequest, opts ...grpc.CallOption) (Users_GetUsersClient, error)
 	Follow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*Empty, error)
+	Unfollow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type usersClient struct {
@@ -100,6 +101,15 @@ func (c *usersClient) Follow(ctx context.Context, in *FollowRequest, opts ...grp
 	return out, nil
 }
 
+func (c *usersClient) Unfollow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/users.Users/Unfollow", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UsersServer is the server API for Users service.
 // All implementations must embed UnimplementedUsersServer
 // for forward compatibility
@@ -109,6 +119,7 @@ type UsersServer interface {
 	GetUserInfoSummary(context.Context, *GetSummaryRequest) (*GetSummaryReply, error)
 	GetUsers(*GetUsersRequest, Users_GetUsersServer) error
 	Follow(context.Context, *FollowRequest) (*Empty, error)
+	Unfollow(context.Context, *FollowRequest) (*Empty, error)
 	mustEmbedUnimplementedUsersServer()
 }
 
@@ -130,6 +141,9 @@ func (*UnimplementedUsersServer) GetUsers(*GetUsersRequest, Users_GetUsersServer
 }
 func (*UnimplementedUsersServer) Follow(context.Context, *FollowRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Follow not implemented")
+}
+func (*UnimplementedUsersServer) Unfollow(context.Context, *FollowRequest) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Unfollow not implemented")
 }
 func (*UnimplementedUsersServer) mustEmbedUnimplementedUsersServer() {}
 
@@ -230,6 +244,24 @@ func _Users_Follow_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Users_Unfollow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FollowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UsersServer).Unfollow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/users.Users/Unfollow",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UsersServer).Unfollow(ctx, req.(*FollowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Users_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "users.Users",
 	HandlerType: (*UsersServer)(nil),
@@ -249,6 +281,10 @@ var _Users_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Follow",
 			Handler:    _Users_Follow_Handler,
+		},
+		{
+			MethodName: "Unfollow",
+			Handler:    _Users_Unfollow_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
