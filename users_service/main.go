@@ -19,7 +19,8 @@ import (
 )
 
 var (
-	pool *pgxpool.Pool
+	pool         *pgxpool.Pool
+	tweetsClient pb.TweetsClient
 )
 
 const (
@@ -230,7 +231,7 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 			and exists (select 1 from users where username = $2 and not ($1 = any(%[1]v)))`, v)
 	}
 
-	var timeline []int
+	var timeline []int64
 	if err = tx.QueryRow(ctx, fmt.Sprintf(query("following"))+" returning timeline",
 		in.GetFollowed(), in.GetFollower()).Scan(&timeline); err != nil {
 		if err == pgx.ErrNoRows {
@@ -241,7 +242,7 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	var tweets []int
+	var tweets []int64
 	if err = tx.QueryRow(ctx, fmt.Sprintf(query("followers"))+" returning tweets",
 		in.GetFollower(), in.GetFollowed()).Scan(&tweets); err != nil {
 		if err == pgx.ErrNoRows {
@@ -254,11 +255,14 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 
 	timeline = append(timeline, tweets...)
 
-	// FIXME: remove select from tweets, cause it depends on foreign data
 	if len(timeline) != 0 {
-		if _, err = tx.Exec(ctx, fmt.Sprintf(`update users set timeline = array(select id from tweets
-		where id in (%s) group by id order by creation_timestamp) where username = $1`,
-			strings.Trim(strings.Replace(fmt.Sprint(timeline), " ", ", ", -1), "[]")),
+		r, err := tweetsClient.GetOrderedTimeline(ctx, &pb.Timeline{Timeline: timeline})
+		if err != nil {
+			return nil, err
+		}
+
+		if _, err = tx.Exec(ctx, fmt.Sprintf("update users set timeline = array[%s]::integer[] where username = $1",
+			strings.Trim(strings.Replace(fmt.Sprint(r.GetTimeline()), " ", ", ", -1), "[]")),
 			in.GetFollower()); err != nil {
 			return nil, status.Errorf(codes.Internal, "%s", err)
 		}
@@ -316,7 +320,7 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 	}
 
 	newTimeline := difference(timeline, tweets)
-	if _, err = tx.Exec(ctx, fmt.Sprintf(`update users set timeline = array[%s]::integer[] where username = $1`,
+	if _, err = tx.Exec(ctx, fmt.Sprintf("update users set timeline = array[%s]::integer[] where username = $1",
 		strings.Trim(strings.Replace(fmt.Sprint(newTimeline), " ", ", ", -1), "[]")),
 		in.GetFollower()); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
@@ -372,6 +376,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
+
+	conn, err := grpc.Dial("localhost:8002", grpc.WithInsecure())
+	if err != nil {
+	}
+	defer conn.Close()
+	tweetsClient = pb.NewTweetsClient(conn)
 
 	s := grpc.NewServer()
 	pb.RegisterUsersServer(s, &UsersServerImpl{})

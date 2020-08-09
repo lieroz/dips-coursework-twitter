@@ -38,9 +38,16 @@ message DeleteTweetsRequest {
   repeated int64 id = 1;
 }
 
+message Timeline {
+  repeated int64 timeline = 1;
+}
+
 service Tweets {
   rpc CreateTweet(CreateTweetRequest) returns (Empty);
   rpc GetTweets(GetTweetsRequest) returns (stream GetTweetsReply);
   rpc EditTweet(EditTweetRequest) returns (Empty);
   rpc DeleteTweet(DeleteTweetsRequest) returns (Empty);
+
+  // private methods
+  rpc GetOrderedTimeline(Timeline) returns (Timeline);
 }
