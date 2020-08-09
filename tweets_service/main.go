@@ -15,13 +15,12 @@ import (
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
 
-	pb "github.com/lieroz/dips-coursework-twitter/tweets_service/protos"
-	usersPb "github.com/lieroz/dips-coursework-twitter/users_service/protos"
+	pb "github.com/lieroz/dips-coursework-twitter/protos"
 )
 
 var (
 	pool        *pgxpool.Pool
-	usersClient usersPb.UsersClient
+	usersClient pb.UsersClient
 )
 
 const (
@@ -59,7 +58,7 @@ func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequ
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	if _, err = usersClient.OnTweetCreated(ctx, &usersPb.OnTweetCreatedRequest{
+	if _, err = usersClient.OnTweetCreated(ctx, &pb.OnTweetCreatedRequest{
 		Username: in.GetCreator(),
 		TweetId:  id,
 	}); err != nil {
@@ -151,7 +150,7 @@ func main() {
 	if err != nil {
 	}
 	defer conn.Close()
-	usersClient = usersPb.NewUsersClient(conn)
+	usersClient = pb.NewUsersClient(conn)
 
 	s := grpc.NewServer()
 	pb.RegisterTweetsServer(s, &TweetsServerImpl{})

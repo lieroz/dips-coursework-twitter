@@ -33,7 +33,7 @@ func NewTweetsClient(cc grpc.ClientConnInterface) TweetsClient {
 
 func (c *tweetsClient) CreateTweet(ctx context.Context, in *CreateTweetRequest, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/tweets.Tweets/CreateTweet", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/Tweets/CreateTweet", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func (c *tweetsClient) CreateTweet(ctx context.Context, in *CreateTweetRequest, 
 }
 
 func (c *tweetsClient) GetTweets(ctx context.Context, in *GetTweetsRequest, opts ...grpc.CallOption) (Tweets_GetTweetsClient, error) {
-	stream, err := c.cc.NewStream(ctx, &_Tweets_serviceDesc.Streams[0], "/tweets.Tweets/GetTweets", opts...)
+	stream, err := c.cc.NewStream(ctx, &_Tweets_serviceDesc.Streams[0], "/Tweets/GetTweets", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (x *tweetsGetTweetsClient) Recv() (*GetTweetsReply, error) {
 
 func (c *tweetsClient) EditTweet(ctx context.Context, in *EditTweetRequest, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/tweets.Tweets/EditTweet", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/Tweets/EditTweet", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (c *tweetsClient) EditTweet(ctx context.Context, in *EditTweetRequest, opts
 
 func (c *tweetsClient) DeleteTweet(ctx context.Context, in *DeleteTweetsRequest, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/tweets.Tweets/DeleteTweet", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/Tweets/DeleteTweet", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func _Tweets_CreateTweet_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/tweets.Tweets/CreateTweet",
+		FullMethod: "/Tweets/CreateTweet",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TweetsServer).CreateTweet(ctx, req.(*CreateTweetRequest))
@@ -172,7 +172,7 @@ func _Tweets_EditTweet_Handler(srv interface{}, ctx context.Context, dec func(in
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/tweets.Tweets/EditTweet",
+		FullMethod: "/Tweets/EditTweet",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TweetsServer).EditTweet(ctx, req.(*EditTweetRequest))
@@ -190,7 +190,7 @@ func _Tweets_DeleteTweet_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/tweets.Tweets/DeleteTweet",
+		FullMethod: "/Tweets/DeleteTweet",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TweetsServer).DeleteTweet(ctx, req.(*DeleteTweetsRequest))
@@ -199,7 +199,7 @@ func _Tweets_DeleteTweet_Handler(srv interface{}, ctx context.Context, dec func(
 }
 
 var _Tweets_serviceDesc = grpc.ServiceDesc{
-	ServiceName: "tweets.Tweets",
+	ServiceName: "Tweets",
 	HandlerType: (*TweetsServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -222,5 +222,5 @@ var _Tweets_serviceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "protos/tweets.proto",
+	Metadata: "tweets.proto",
 }

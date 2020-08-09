@@ -37,7 +37,7 @@ func NewUsersClient(cc grpc.ClientConnInterface) UsersClient {
 
 func (c *usersClient) CreateUser(ctx context.Context, in *CreateRequest, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/users.Users/CreateUser", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/Users/CreateUser", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func (c *usersClient) CreateUser(ctx context.Context, in *CreateRequest, opts ..
 
 func (c *usersClient) DeleteUser(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/users.Users/DeleteUser", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/Users/DeleteUser", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (c *usersClient) DeleteUser(ctx context.Context, in *DeleteRequest, opts ..
 
 func (c *usersClient) GetUserInfoSummary(ctx context.Context, in *GetSummaryRequest, opts ...grpc.CallOption) (*GetSummaryReply, error) {
 	out := new(GetSummaryReply)
-	err := c.cc.Invoke(ctx, "/users.Users/GetUserInfoSummary", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/Users/GetUserInfoSummary", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func (c *usersClient) GetUserInfoSummary(ctx context.Context, in *GetSummaryRequ
 }
 
 func (c *usersClient) GetUsers(ctx context.Context, in *GetUsersRequest, opts ...grpc.CallOption) (Users_GetUsersClient, error) {
-	stream, err := c.cc.NewStream(ctx, &_Users_serviceDesc.Streams[0], "/users.Users/GetUsers", opts...)
+	stream, err := c.cc.NewStream(ctx, &_Users_serviceDesc.Streams[0], "/Users/GetUsers", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (x *usersGetUsersClient) Recv() (*GetUsersReply, error) {
 
 func (c *usersClient) Follow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/users.Users/Follow", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/Users/Follow", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func (c *usersClient) Follow(ctx context.Context, in *FollowRequest, opts ...grp
 
 func (c *usersClient) Unfollow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/users.Users/Unfollow", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/Users/Unfollow", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func (c *usersClient) Unfollow(ctx context.Context, in *FollowRequest, opts ...g
 
 func (c *usersClient) OnTweetCreated(ctx context.Context, in *OnTweetCreatedRequest, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/users.Users/OnTweetCreated", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/Users/OnTweetCreated", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func _Users_CreateUser_Handler(srv interface{}, ctx context.Context, dec func(in
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/users.Users/CreateUser",
+		FullMethod: "/Users/CreateUser",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(UsersServer).CreateUser(ctx, req.(*CreateRequest))
@@ -195,7 +195,7 @@ func _Users_DeleteUser_Handler(srv interface{}, ctx context.Context, dec func(in
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/users.Users/DeleteUser",
+		FullMethod: "/Users/DeleteUser",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(UsersServer).DeleteUser(ctx, req.(*DeleteRequest))
@@ -213,7 +213,7 @@ func _Users_GetUserInfoSummary_Handler(srv interface{}, ctx context.Context, dec
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/users.Users/GetUserInfoSummary",
+		FullMethod: "/Users/GetUserInfoSummary",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(UsersServer).GetUserInfoSummary(ctx, req.(*GetSummaryRequest))
@@ -252,7 +252,7 @@ func _Users_Follow_Handler(srv interface{}, ctx context.Context, dec func(interf
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/users.Users/Follow",
+		FullMethod: "/Users/Follow",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(UsersServer).Follow(ctx, req.(*FollowRequest))
@@ -270,7 +270,7 @@ func _Users_Unfollow_Handler(srv interface{}, ctx context.Context, dec func(inte
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/users.Users/Unfollow",
+		FullMethod: "/Users/Unfollow",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(UsersServer).Unfollow(ctx, req.(*FollowRequest))
@@ -288,7 +288,7 @@ func _Users_OnTweetCreated_Handler(srv interface{}, ctx context.Context, dec fun
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/users.Users/OnTweetCreated",
+		FullMethod: "/Users/OnTweetCreated",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(UsersServer).OnTweetCreated(ctx, req.(*OnTweetCreatedRequest))
@@ -297,7 +297,7 @@ func _Users_OnTweetCreated_Handler(srv interface{}, ctx context.Context, dec fun
 }
 
 var _Users_serviceDesc = grpc.ServiceDesc{
-	ServiceName: "users.Users",
+	ServiceName: "Users",
 	HandlerType: (*UsersServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -332,5 +332,5 @@ var _Users_serviceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "protos/users.proto",
+	Metadata: "users.proto",
 }

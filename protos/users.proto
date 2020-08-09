@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-option go_package = "github.com/lieroz/dips-coursework-twitter/users_service;protos";
+option go_package = ".;protos";
 
-package users;
+import "utils.proto";
 
 message User {
   string username = 1;
@@ -14,8 +14,6 @@ message User {
   repeated string following = 7;
   repeated int64 tweets = 8;
 }
-
-message Empty {}
 
 message CreateRequest {
   string username = 1;

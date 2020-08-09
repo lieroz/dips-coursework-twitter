@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-option go_package = "github.com/lieroz/dips-coursework-twitter/tweets_service;protos";
+option go_package = ".;protos";
 
-package tweets;
+import "utils.proto";
 
 message Tweet {
   int64 id = 1;
@@ -11,8 +11,6 @@ message Tweet {
   string content = 4;
   int64 creation_timestamp = 5;
 }
-
-message Empty {}
 
 message CreateTweetRequest {
   int64 parent_id = 1;
