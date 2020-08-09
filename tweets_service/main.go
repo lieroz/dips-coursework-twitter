@@ -16,10 +16,12 @@ import (
 	status "google.golang.org/grpc/status"
 
 	pb "github.com/lieroz/dips-coursework-twitter/tweets_service/protos"
+	usersPb "github.com/lieroz/dips-coursework-twitter/users_service/protos"
 )
 
 var (
-	pool *pgxpool.Pool
+	pool        *pgxpool.Pool
+	usersClient usersPb.UsersClient
 )
 
 const (
@@ -46,33 +48,22 @@ func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequ
 	defer tx.Rollback(ctx)
 
 	var id int
-	// https://stackoverflow.com/questions/31733790/postgresql-parameter-issue-1
 	err = tx.QueryRow(ctx,
-		`insert into tweets (parent_id, creator, content) select $1, $2::varchar, $3 
-			where exists (select 1 from users where username = $2) returning id`,
+		"insert into tweets (parent_id, creator, content) select $1, $2, $3 returning id",
 		in.GetParentId(),
 		in.GetCreator(),
 		in.GetContent(),
 	).Scan(&id)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, status.Errorf(codes.NotFound,
-				"user with username: '%s' doesn't exist and tweet can't be created", in.GetCreator())
-
-		}
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	var followers []string
-	if err = tx.QueryRow(ctx, "update users set tweets = array_append(tweets, $1) where username = $2 returning followers",
-		id, in.GetCreator()).Scan(&followers); err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
-	}
-
-	if _, err = tx.Exec(ctx, fmt.Sprintf("update users set timeline = array_append(timeline, $1) where username in ('%s')",
-		strings.Join(followers[:], "', '")), id); err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
+	if _, err = usersClient.OnTweetCreated(ctx, &usersPb.OnTweetCreatedRequest{
+		Username: in.GetCreator(),
+		TweetId:  id,
+	}); err != nil {
+		return nil, err
 	}
 
 	if err = tx.Commit(ctx); err != nil {
@@ -155,6 +146,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
+
+	conn, err := grpc.Dial("0.0.0.0:8001")
+	if err != nil {
+	}
+	defer conn.Close()
+	usersClient = usersPb.NewUsersClient(conn)
 
 	s := grpc.NewServer()
 	pb.RegisterTweetsServer(s, &TweetsServerImpl{})

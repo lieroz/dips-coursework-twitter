@@ -329,6 +329,38 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 	return &pb.Empty{}, nil
 }
 
+func (*UsersServerImpl) OnTweetCreated(ctx context.Context, in *pb.OnTweetCreatedRequest) (*pb.Empty, error) {
+	if in.GetUsername() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "'username' field can't be empty")
+	}
+	if in.GetTweetId() == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "'tweet_id' field can't be empty")
+	}
+
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var followers []string
+	if err = tx.QueryRow(ctx, "update users set tweets = array_append(tweets, $1) where username = $2 returning followers",
+		in.GetTweetId(), in.GetUsername()).Scan(&followers); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+
+	if _, err = tx.Exec(ctx, fmt.Sprintf("update users set timeline = array_append(timeline, $1) where username in ('%s')",
+		strings.Join(followers[:], "', '")), in.GetTweetId()); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+
+	return &pb.Empty{}, nil
+}
+
 func main() {
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
