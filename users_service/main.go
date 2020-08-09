@@ -26,6 +26,21 @@ const (
 	port = ":8001"
 )
 
+func difference(a, b []int) (diff []int) {
+	m := make(map[int]bool)
+
+	for _, item := range b {
+		m[item] = true
+	}
+
+	for _, item := range a {
+		if _, ok := m[item]; !ok {
+			diff = append(diff, item)
+		}
+	}
+	return
+}
+
 type UsersServerImpl struct {
 	pb.UnimplementedUsersServer
 }
@@ -243,6 +258,61 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 			in.GetFollower()); err != nil {
 			return nil, status.Errorf(codes.Internal, "%s", err)
 		}
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+
+	return &pb.Empty{}, nil
+}
+
+func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb.Empty, error) {
+	if in.GetFollower() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "'follower' field can't be empty")
+	}
+	if in.GetFollowed() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "'followed' field can't be empty")
+	}
+
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+	defer tx.Rollback(ctx)
+
+	query := func(v string) string {
+		return fmt.Sprintf(`update users set %[1]v = array_remove(%[1]v, $1) where username = $2 
+			and exists (select 1 from users where username = $2)`, v)
+	}
+
+	var timeline []int
+	if err = tx.QueryRow(ctx, fmt.Sprintf(query("following"))+" returning timeline",
+		in.GetFollowed(), in.GetFollower()).Scan(&timeline); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, status.Errorf(codes.NotFound,
+				"user with username: '%s' doesn't exist and can't follow '%s'",
+				in.GetFollower(), in.GetFollowed())
+		}
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+
+	var tweets []int
+	if err = tx.QueryRow(ctx, fmt.Sprintf(query("followers"))+" returning tweets",
+		in.GetFollower(), in.GetFollowed()).Scan(&tweets); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, status.Errorf(codes.NotFound,
+				"user with username: '%s' doesn't exist and can't be followed by '%s'",
+				in.GetFollowed(), in.GetFollower())
+		}
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+
+	newTimeline := difference(timeline, tweets)
+	if _, err = tx.Exec(ctx, fmt.Sprintf(`update users set timeline = array[%s] where username = $1`,
+		strings.Trim(strings.Replace(fmt.Sprint(newTimeline), " ", ", ", -1), "[]")),
+		in.GetFollower()); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
 	if err = tx.Commit(ctx); err != nil {
