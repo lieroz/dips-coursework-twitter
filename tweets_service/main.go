@@ -15,7 +15,7 @@ import (
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
 
-	pb "github.com/lieroz/dips-coursework-twitter/protos"
+	pb "github.com/lieroz/dips-coursework-twitter/tweets_service/protos"
 )
 
 var (
@@ -60,7 +60,7 @@ func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequ
 
 	if _, err = usersClient.OnTweetCreated(ctx, &pb.OnTweetCreatedRequest{
 		Username: in.GetCreator(),
-		TweetId:  id,
+		TweetId:  int64(id),
 	}); err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	conn, err := grpc.Dial("0.0.0.0:8001")
+	conn, err := grpc.Dial("localhost:8001", grpc.WithInsecure())
 	if err != nil {
 	}
 	defer conn.Close()

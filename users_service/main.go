@@ -15,7 +15,7 @@ import (
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
 
-	pb "github.com/lieroz/dips-coursework-twitter/protos"
+	pb "github.com/lieroz/dips-coursework-twitter/users_service/protos"
 )
 
 var (
