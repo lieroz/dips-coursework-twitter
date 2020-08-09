@@ -54,6 +54,7 @@ func (*UsersServerImpl) CreateUser(ctx context.Context, in *pb.CreateRequest) (*
 	return &pb.Empty{}, nil
 }
 
+// TODO: add tweets deletion from tweets table and followers timelines
 func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*pb.Empty, error) {
 	if in.GetUsername() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "'username' field can't be empty")
@@ -192,6 +193,7 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 	return nil
 }
 
+// TODO: add followed timeline to follower timeline and sort by timestamp
 func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.Empty, error) {
 	if in.GetFollower() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "'follower' field can't be empty")

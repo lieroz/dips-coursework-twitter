@@ -46,7 +46,7 @@ func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequ
 
 	var id int
 	// https://stackoverflow.com/questions/31733790/postgresql-parameter-issue-1
-	err = pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`insert into tweets (parent_id, creator, content) select $1, $2::varchar, $3 
 			where exists (select 1 from users where username = $2) returning id`,
 		in.GetParentId(),
@@ -63,9 +63,14 @@ func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequ
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	// maybe check for result? but this is under tx, so must be granular enough
-	if _, err = pool.Exec(ctx, "update users set tweets = array_append(tweets, $1) where username = $2",
-		id, in.GetCreator()); err != nil {
+	var followers []string
+	if err = tx.QueryRow(ctx, "update users set tweets = array_append(tweets, $1) where username = $2 returning followers",
+		id, in.GetCreator()).Scan(&followers); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+
+	if _, err = tx.Exec(ctx, fmt.Sprintf("update users set timeline = array_append(timeline, $1) where username in ('%s')",
+		strings.Join(followers[:], "', '")), id); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
@@ -121,20 +126,20 @@ func (*TweetsServerImpl) EditTweet(ctx context.Context, in *pb.EditTweetRequest)
 		return nil, status.Errorf(codes.InvalidArgument, "'content' field can't be empty")
 	}
 
-	if cmdTag, err := pool.Exec(ctx, "update tweets set content = $1 where id = $2 and parent_id = 0",
+	if _, err := pool.Exec(ctx, "update tweets set content = $1 where id = $2",
 		in.GetContent(), in.GetId()); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
-	} else {
-		if cmdTag.RowsAffected() == 0 {
-			return nil, status.Errorf(codes.InvalidArgument,
-				"retweeted tweet can't be updated")
-		}
 	}
 
 	return &pb.Empty{}, nil
 }
 
+// Delete tweets from tweets table, from users table and from timeline table
 func (*TweetsServerImpl) DeleteTweet(ctx context.Context, in *pb.DeleteTweetsRequest) (*pb.Empty, error) {
+	if in.GetId() == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "'id' field can't be omitted")
+	}
+
 	return &pb.Empty{}, nil
 }
 
