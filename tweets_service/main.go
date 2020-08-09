@@ -31,7 +31,6 @@ type TweetsServerImpl struct {
 	pb.UnimplementedTweetsServer
 }
 
-// FIXME: select from users and update users, must be make as methods
 func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequest) (*pb.Empty, error) {
 	if in.GetCreator() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "'creator' field can't be empty")
