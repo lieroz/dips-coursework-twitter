@@ -134,9 +134,23 @@ func (*TweetsServerImpl) DeleteTweets(ctx context.Context, in *pb.DeleteTweetsRe
 		return nil, status.Errorf(codes.InvalidArgument, "'id' field can't be omitted")
 	}
 
-	if _, err := pool.Exec(ctx, fmt.Sprintf("delete from tweets where id in (%s)",
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, fmt.Sprintf("delete from tweets where id in (%s)",
 		strings.Trim(strings.Replace(fmt.Sprint(in.GetId()), " ", ", ", -1), "[]"))); err != nil {
 		return nil, err
+	}
+
+	if in.GetContext() == pb.DeleteTweetsRequest_Client {
+		// Add request to users service
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
 	return &pb.Empty{}, nil

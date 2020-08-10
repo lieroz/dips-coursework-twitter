@@ -152,7 +152,8 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	if _, err = tweetsClient.DeleteTweets(ctx, &pb.DeleteTweetsRequest{Id: tweets}); err != nil {
+	if _, err = tweetsClient.DeleteTweets(ctx, &pb.DeleteTweetsRequest{
+		Context: pb.DeleteTweetsRequest_Service, Id: tweets}); err != nil {
 		return nil, err
 	}
 

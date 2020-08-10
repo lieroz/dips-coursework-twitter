@@ -35,7 +35,13 @@ message EditTweetRequest {
 }
 
 message DeleteTweetsRequest {
-  repeated int64 id = 1;
+  enum Context {
+    Client = 0;
+    Service = 1;
+  }
+
+  Context context = 1;
+  repeated int64 id = 2;
 }
 
 message Timeline {
