@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -114,34 +115,44 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 		return nil, err
 	}
 
+	strQuery := bytes.NewBufferString("update users as u1 set timeline = u2.timeline from (values")
 	for rows.Next() {
 		if err = rows.Scan(&username, &timeline); err != nil {
+			log.Println(err)
+		} else {
 			newTimeline := difference(timeline, tweets)
 
-			if err = stream.Send(&pb.Timeline{Timeline: newTimeline}); err != nil {
-				log.Println(err)
-			} else {
-				if in, err := stream.Recv(); err != nil {
+			if len(newTimeline) != 0 {
+				if err = stream.Send(&pb.Timeline{Timeline: newTimeline}); err != nil {
 					log.Println(err)
 				} else {
-					if _, err = tx.Exec(ctx, fmt.Sprintf("update users set timeline = array[%s]::integer[] where username = $1",
-						strings.Trim(strings.Replace(fmt.Sprint(in.GetTimeline()), " ", ", ", -1), "[]")),
-						username); err != nil {
-						return nil, status.Errorf(codes.Internal, "%s", err)
+					if in, err := stream.Recv(); err != nil {
+						log.Println(err)
+					} else {
+						newTimeline = in.GetTimeline()
 					}
 				}
 			}
+
+			strQuery.WriteString(fmt.Sprintf("('%s', array[%s]::integer[]),",
+				username, strings.Trim(strings.Replace(fmt.Sprint(newTimeline), " ", ", ", -1), "[]")))
 		}
 	}
 
+	strQuery.Truncate(strQuery.Len() - 1)
+	strQuery.WriteString(") as u2(username, timeline) where u2.username = u1.username")
 	stream.CloseSend()
+
+	if _, err = tx.Exec(ctx, strQuery.String()); err != nil {
+		return nil, err
+	}
 
 	if _, err = tx.Exec(ctx, query("followers", strings.Join(following[:], "', '")),
 		in.GetUsername()); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	if _, err = tweetsClient.DeleteTweet(ctx, &pb.DeleteTweetsRequest{Id: tweets}); err != nil {
+	if _, err = tweetsClient.DeleteTweets(ctx, &pb.DeleteTweetsRequest{Id: tweets}); err != nil {
 		return nil, err
 	}
 

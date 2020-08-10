@@ -129,10 +129,14 @@ func (*TweetsServerImpl) EditTweet(ctx context.Context, in *pb.EditTweetRequest)
 	return &pb.Empty{}, nil
 }
 
-// Delete tweets from tweets table, from users table and from timeline table
-func (*TweetsServerImpl) DeleteTweet(ctx context.Context, in *pb.DeleteTweetsRequest) (*pb.Empty, error) {
+func (*TweetsServerImpl) DeleteTweets(ctx context.Context, in *pb.DeleteTweetsRequest) (*pb.Empty, error) {
 	if in.GetId() == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "'id' field can't be omitted")
+	}
+
+	if _, err := pool.Exec(ctx, fmt.Sprintf("delete from tweets where id in (%s)",
+		strings.Trim(strings.Replace(fmt.Sprint(in.GetId()), " ", ", ", -1), "[]"))); err != nil {
+		return nil, err
 	}
 
 	return &pb.Empty{}, nil
