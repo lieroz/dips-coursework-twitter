@@ -49,5 +49,5 @@ service Tweets {
   rpc DeleteTweet(DeleteTweetsRequest) returns (Empty);
 
   // private methods
-  rpc GetOrderedTimeline(Timeline) returns (Timeline);
+  rpc GetOrderedTimeline(stream Timeline) returns (stream Timeline);
 }

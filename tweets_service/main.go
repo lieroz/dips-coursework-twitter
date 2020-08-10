@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -137,33 +138,43 @@ func (*TweetsServerImpl) DeleteTweet(ctx context.Context, in *pb.DeleteTweetsReq
 	return &pb.Empty{}, nil
 }
 
-func (*TweetsServerImpl) GetOrderedTimeline(ctx context.Context, in *pb.Timeline) (*pb.Timeline, error) {
-	if in.GetTimeline() == nil {
-		return nil, status.Errorf(codes.InvalidArgument, "'tweets' field can't be empty")
-	}
+func (*TweetsServerImpl) GetOrderedTimeline(stream pb.Tweets_GetOrderedTimelineServer) error {
+	ctx := context.Background()
 
-	rows, err := pool.Query(ctx, fmt.Sprintf("select id from tweets where id in (%s) group by id order by creation_timestamp",
-		strings.Trim(strings.Replace(fmt.Sprint(in.GetTimeline()), " ", ", ", -1), "[]")))
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
-	}
+	for {
+		in, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
 
-	timeline := pb.Timeline{}
-	var tweetId int64
-
-	for rows.Next() {
-		if err := rows.Scan(&tweetId); err != nil {
+		if err != nil {
 			log.Println(err)
 		} else {
-			timeline.Timeline = append(timeline.Timeline, tweetId)
+			if rows, err := pool.Query(ctx, fmt.Sprintf("select id from tweets where id in (%s) group by id order by creation_timestamp",
+				strings.Trim(strings.Replace(fmt.Sprint(in.GetTimeline()), " ", ", ", -1), "[]"))); err != nil {
+				log.Println(err)
+			} else {
+				timeline := pb.Timeline{}
+				var tweetId int64
+
+				for rows.Next() {
+					if err := rows.Scan(&tweetId); err != nil {
+						log.Println(err)
+					} else {
+						timeline.Timeline = append(timeline.Timeline, tweetId)
+					}
+				}
+
+				if err = stream.Send(&timeline); err != nil {
+					log.Println(err)
+				}
+
+				if rows.Err() != nil {
+					log.Println(err)
+				}
+			}
 		}
 	}
-
-	if rows.Err() != nil {
-		return nil, status.Errorf(codes.Internal, "%s", rows.Err())
-	}
-
-	return &timeline, nil
 }
 
 func main() {

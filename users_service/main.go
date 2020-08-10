@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -27,8 +28,8 @@ const (
 	port = ":8001"
 )
 
-func difference(a, b []int) (diff []int) {
-	m := make(map[int]bool)
+func difference(a, b []int64) (diff []int64) {
+	m := make(map[int64]bool)
 
 	for _, item := range b {
 		m[item] = true
@@ -70,7 +71,6 @@ func (*UsersServerImpl) CreateUser(ctx context.Context, in *pb.CreateRequest) (*
 	return &pb.Empty{}, nil
 }
 
-// TODO: add tweets deletion from tweets table and followers timelines
 func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*pb.Empty, error) {
 	if in.GetUsername() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "'username' field can't be empty")
@@ -83,7 +83,7 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 	defer tx.Rollback(ctx)
 
 	var followers, following []string
-	var tweets []int
+	var tweets []int64
 
 	if err = tx.QueryRow(ctx,
 		"delete from users where username = $1 returning followers, following, tweets",
@@ -100,14 +100,49 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 			field, users)
 	}
 
-	if _, err = tx.Exec(ctx, query("following", strings.Join(followers[:], "', '")),
-		in.GetUsername()); err != nil {
+	rows, err := tx.Query(ctx, query("following", strings.Join(followers[:], "', '"))+" returning username, timeline",
+		in.GetUsername())
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
+
+	var username string
+	var timeline []int64
+
+	stream, err := tweetsClient.GetOrderedTimeline(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+		if err = rows.Scan(&username, &timeline); err != nil {
+			newTimeline := difference(timeline, tweets)
+
+			if err = stream.Send(&pb.Timeline{Timeline: newTimeline}); err != nil {
+				log.Println(err)
+			} else {
+				if in, err := stream.Recv(); err != nil {
+					log.Println(err)
+				} else {
+					if _, err = tx.Exec(ctx, fmt.Sprintf("update users set timeline = array[%s]::integer[] where username = $1",
+						strings.Trim(strings.Replace(fmt.Sprint(in.GetTimeline()), " ", ", ", -1), "[]")),
+						username); err != nil {
+						return nil, status.Errorf(codes.Internal, "%s", err)
+					}
+				}
+			}
+		}
+	}
+
+	stream.CloseSend()
 
 	if _, err = tx.Exec(ctx, query("followers", strings.Join(following[:], "', '")),
 		in.GetUsername()); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+
+	if _, err = tweetsClient.DeleteTweet(ctx, &pb.DeleteTweetsRequest{Id: tweets}); err != nil {
+		return nil, err
 	}
 
 	if err = tx.Commit(ctx); err != nil {
@@ -256,18 +291,32 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 	timeline = append(timeline, tweets...)
 
 	if len(timeline) != 0 {
-		r, err := tweetsClient.GetOrderedTimeline(ctx, &pb.Timeline{Timeline: timeline})
+		// read below
+		stream, err := tweetsClient.GetOrderedTimeline(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		if _, err = tx.Exec(ctx, fmt.Sprintf("update users set timeline = array[%s]::integer[] where username = $1",
-			strings.Trim(strings.Replace(fmt.Sprint(r.GetTimeline()), " ", ", ", -1), "[]")),
-			in.GetFollower()); err != nil {
-			return nil, status.Errorf(codes.Internal, "%s", err)
+		if err = stream.Send(&pb.Timeline{Timeline: timeline}); err != nil {
+			return nil, err
+		} else {
+			stream.CloseSend()
+			r, err := stream.Recv()
+			if err != nil && err != io.EOF {
+				return nil, err
+			}
+
+			if _, err = tx.Exec(ctx, fmt.Sprintf("update users set timeline = array[%s]::integer[] where username = $1",
+				strings.Trim(strings.Replace(fmt.Sprint(r.GetTimeline()), " ", ", ", -1), "[]")),
+				in.GetFollower()); err != nil {
+				return nil, status.Errorf(codes.Internal, "%s", err)
+			}
 		}
 	}
 
+	// FIXME: here commit may fail only if smth is wrong with database itself
+	// or machine which runs it, so better send tx abort to tweets service to rollback
+	// but this is a prototype service for coursework, so just ignore it
 	if err = tx.Commit(ctx); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
@@ -297,7 +346,7 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 			and exists (select 1 from users where username = $2 and $1 = any(%[1]v))`, v)
 	}
 
-	var timeline []int
+	var timeline []int64
 	if err = tx.QueryRow(ctx, fmt.Sprintf(query("following"))+" returning timeline",
 		in.GetFollowed(), in.GetFollower()).Scan(&timeline); err != nil {
 		if err == pgx.ErrNoRows {
@@ -308,7 +357,7 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 
-	var tweets []int
+	var tweets []int64
 	if err = tx.QueryRow(ctx, fmt.Sprintf(query("followers"))+" returning tweets",
 		in.GetFollower(), in.GetFollowed()).Scan(&tweets); err != nil {
 		if err == pgx.ErrNoRows {
