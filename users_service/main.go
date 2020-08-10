@@ -106,6 +106,7 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
+	defer rows.Close()
 
 	var username string
 	var timeline []int64
@@ -115,7 +116,9 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 		return nil, err
 	}
 
+	updateFollowing := false
 	strQuery := bytes.NewBufferString("update users as u1 set timeline = u2.timeline from (values")
+
 	for rows.Next() {
 		if err = rows.Scan(&username, &timeline); err != nil {
 			log.Println(err)
@@ -123,19 +126,20 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 			newTimeline := difference(timeline, tweets)
 
 			if len(newTimeline) != 0 {
-				if err = stream.Send(&pb.Timeline{Timeline: newTimeline}); err != nil {
-					log.Println(err)
-				} else {
-					if in, err := stream.Recv(); err != nil {
-						log.Println(err)
-					} else {
+				if err = stream.Send(&pb.Timeline{Timeline: newTimeline}); err == nil {
+					if in, err := stream.Recv(); err == nil {
 						newTimeline = in.GetTimeline()
 					}
 				}
 			}
 
-			strQuery.WriteString(fmt.Sprintf("('%s', array[%s]::integer[]),",
-				username, strings.Trim(strings.Replace(fmt.Sprint(newTimeline), " ", ", ", -1), "[]")))
+			if err == nil {
+				strQuery.WriteString(fmt.Sprintf("('%s', array[%s]::integer[]),",
+					username, strings.Trim(strings.Replace(fmt.Sprint(newTimeline), " ", ", ", -1), "[]")))
+				updateFollowing = true
+			} else {
+				log.Println(err)
+			}
 		}
 	}
 
@@ -143,8 +147,10 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 	strQuery.WriteString(") as u2(username, timeline) where u2.username = u1.username")
 	stream.CloseSend()
 
-	if _, err = tx.Exec(ctx, strQuery.String()); err != nil {
-		return nil, err
+	if updateFollowing {
+		if _, err = tx.Exec(ctx, strQuery.String()); err != nil {
+			return nil, err
+		}
 	}
 
 	if _, err = tx.Exec(ctx, query("followers", strings.Join(following[:], "', '")),
@@ -223,6 +229,7 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 	if err != nil {
 		return status.Errorf(codes.Internal, "%s", err)
 	}
+	defer rows.Close()
 
 	user := pb.User{}
 	var timestamp time.Time
