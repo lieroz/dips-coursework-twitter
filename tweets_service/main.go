@@ -146,7 +146,9 @@ func (*TweetsServerImpl) DeleteTweets(ctx context.Context, in *pb.DeleteTweetsRe
 	}
 
 	if in.GetContext() == pb.DeleteTweetsRequest_Client {
-		// Add request to users service
+		if _, err = usersClient.OnTweetsDeleted(ctx, &pb.OnTweetsDeletedRequest{TweetId: in.GetId()}); err != nil {
+			return nil, err
+		}
 	}
 
 	if err = tx.Commit(ctx); err != nil {

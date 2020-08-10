@@ -433,6 +433,51 @@ func (*UsersServerImpl) OnTweetCreated(ctx context.Context, in *pb.OnTweetCreate
 	return &pb.Empty{}, nil
 }
 
+func (*UsersServerImpl) OnTweetsDeleted(ctx context.Context, in *pb.OnTweetsDeletedRequest) (*pb.Empty, error) {
+	if in.GetTweetId() == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "'tweet_id' field can't be empty")
+	}
+
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+	defer tx.Rollback(ctx)
+
+	strTweets := strings.Trim(strings.Replace(fmt.Sprint(in.GetTweetId()), " ", ", ", -1), "[]")
+	rows, err := tx.Query(ctx, fmt.Sprintf("select username, timeline from users where timeline && array[%[1]v]", strTweets))
+	if err != nil {
+		return nil, err
+	}
+
+	var username string
+	var timeline []int64
+	strQuery := bytes.NewBufferString("update users as u1 set timeline = u2.timeline from (values")
+
+	for rows.Next() {
+		if err = rows.Scan(&username, &timeline); err != nil {
+			return nil, err
+		}
+
+		newTimeline := difference(timeline, in.GetTweetId())
+		strQuery.WriteString(fmt.Sprintf("('%s', array[%s]::integer[]),",
+			username, strings.Trim(strings.Replace(fmt.Sprint(newTimeline), " ", ", ", -1), "[]")))
+	}
+
+	strQuery.Truncate(strQuery.Len() - 1)
+	strQuery.WriteString(") as u2(username, timeline) where u2.username = u1.username")
+
+	if _, err := tx.Exec(ctx, strQuery.String()); err != nil {
+		return nil, err
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+
+	return &pb.Empty{}, nil
+}
+
 func main() {
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
