@@ -2,13 +2,27 @@ version: '3'
 
 services:
   database:
-    image: "postgres"
+    image: "postgres:alpine"
     env_file:
       - database.env
     volumes:
       - database-data:/var/lib/postgresql/data/
     ports:
       - "5432:5432"
+
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+    volumes:
+      - database-data:/var/lib/redis/data/
+
+  nats:
+    image: 'nats:alpine'
+    ports:
+      - "8222:8222"
+      - "4222:4222"
+    hostname: nats-server
 
 volumes:
   database-data:

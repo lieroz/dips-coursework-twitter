@@ -63,15 +63,6 @@ message FollowRequest {
   string followed = 2;
 }
 
-message OnTweetCreatedRequest {
-  string username = 1; 
-  int64 tweet_id = 2;
-}
-
-message OnTweetsDeletedRequest {
-  repeated int64 tweet_id = 1;
-}
-
 service Users {
   rpc CreateUser(CreateRequest) returns (Empty);
   rpc DeleteUser(DeleteRequest) returns (Empty);
@@ -81,8 +72,4 @@ service Users {
 
   rpc Follow(FollowRequest) returns (Empty);
   rpc Unfollow(FollowRequest) returns (Empty);
-
-  // private methods
-  rpc OnTweetCreated(OnTweetCreatedRequest) returns (Empty);
-  rpc OnTweetsDeleted(OnTweetsDeletedRequest) returns (Empty);
 }

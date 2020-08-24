@@ -51,7 +51,6 @@ message Timeline {
 service Tweets {
   rpc CreateTweet(CreateTweetRequest) returns (Empty);
   rpc GetTweets(GetTweetsRequest) returns (stream GetTweetsReply);
-  rpc EditTweet(EditTweetRequest) returns (Empty);
   rpc DeleteTweets(DeleteTweetsRequest) returns (Empty);
 
   // private methods
