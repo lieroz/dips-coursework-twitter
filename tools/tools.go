@@ -3,6 +3,9 @@ package tools
 import (
 	"fmt"
 	"strings"
+
+	codes "google.golang.org/grpc/codes"
+	status "google.golang.org/grpc/status"
 )
 
 //FIXME: move unused to end and then remove by slicing
@@ -32,4 +35,8 @@ func InterfaceToStringArray(data interface{}) []string {
 
 func IntArrayToString(arr []int64) string {
 	return strings.Trim(strings.Replace(fmt.Sprint(arr), " ", ", ", -1), "[]")
+}
+
+func GrpcError(code codes.Code) error {
+	return status.Error(code, "")
 }
