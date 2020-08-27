@@ -26,10 +26,6 @@ import (
 	"github.com/lieroz/dips-coursework-twitter/tools"
 )
 
-//FIXME: in grpc methods internal errors are returned to client,
-//have to add logging with info to debug easier
-//better move to zerolog
-
 var (
 	pool *pgxpool.Pool
 	nc   *nats.Conn
@@ -58,8 +54,11 @@ func (*UsersServerImpl) CreateUser(ctx context.Context, in *pb.CreateRequest) (*
 		return nil, tools.GrpcError(codes.InvalidArgument)
 	}
 
+	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
+	defer psqlCtxCancel()
+
 	query := "insert into users (username, firstname, lastname, description) values ($1, $2, $3, $4) on conflict do nothing"
-	cmdTag, err := pool.Exec(ctx, query, in.Username, in.Firstname, in.Lastname, in.Description)
+	cmdTag, err := pool.Exec(psqlCtx, query, in.Username, in.Firstname, in.Lastname, in.Description)
 
 	if err != nil {
 		sublogger.Error().Err(err).
@@ -159,7 +158,10 @@ func (*UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummar
 		registration_timestamp, cardinality(followers), cardinality(following), cardinality(tweets)
 		from users where username = $1`
 
-	if err := pool.QueryRow(ctx, query, in.Username).Scan(
+	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
+	defer psqlCtxCancel()
+
+	if err := pool.QueryRow(psqlCtx, query, in.Username).Scan(
 		&summary.Username,
 		&summary.Firstname,
 		&summary.Lastname,
@@ -267,12 +269,15 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 		return nil, tools.GrpcError(codes.InvalidArgument)
 	}
 
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
+	defer psqlCtxCancel()
+
+	tx, err := pool.BeginTx(psqlCtx, pgx.TxOptions{})
 	if err != nil {
 		sublogger.Error().Err(err).Send()
 		return nil, tools.GrpcError(codes.Internal)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(psqlCtx)
 
 	query := func(v string) string {
 		return fmt.Sprintf(`update users set %[1]v = array_append(%[1]v, $1::varchar) where username = $2
@@ -282,7 +287,7 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 	var timeline []int64
 	strQuery := fmt.Sprintf(query("following")) + " returning timeline"
 
-	if err = tx.QueryRow(ctx, strQuery, in.Followed, in.Follower).Scan(&timeline); err != nil {
+	if err = tx.QueryRow(psqlCtx, strQuery, in.Followed, in.Follower).Scan(&timeline); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, tools.GrpcError(codes.NotFound)
 		}
@@ -292,7 +297,7 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 
 	var tweets []int64
 	strQuery = fmt.Sprintf(query("followers")) + " returning tweets"
-	if err = tx.QueryRow(ctx, strQuery, in.Follower, in.Followed).Scan(&tweets); err != nil {
+	if err = tx.QueryRow(psqlCtx, strQuery, in.Follower, in.Followed).Scan(&tweets); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, tools.GrpcError(codes.NotFound)
 		}
@@ -312,13 +317,13 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 		strQuery = fmt.Sprintf("update users set timeline = array[%s]::integer[] where username = $1",
 			tools.IntArrayToString(timeline))
 
-		if _, err = tx.Exec(ctx, strQuery, in.Follower); err != nil {
+		if _, err = tx.Exec(psqlCtx, strQuery, in.Follower); err != nil {
 			sublogger.Error().Err(err).Msg(strQuery)
 			return nil, tools.GrpcError(codes.Internal)
 		}
 	}
 
-	if err = tx.Commit(ctx); err != nil {
+	if err = tx.Commit(psqlCtx); err != nil {
 		sublogger.Error().Err(err).Send()
 		return nil, tools.GrpcError(codes.Internal)
 	}
@@ -345,12 +350,15 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 		return nil, tools.GrpcError(codes.InvalidArgument)
 	}
 
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
+	defer psqlCtxCancel()
+
+	tx, err := pool.BeginTx(psqlCtx, pgx.TxOptions{})
 	if err != nil {
 		sublogger.Error().Err(err).Send()
 		return nil, tools.GrpcError(codes.Internal)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(psqlCtx)
 
 	query := func(v string) string {
 		return fmt.Sprintf(`update users set %[1]v = array_remove(%[1]v, $1::varchar) where username = $2 
@@ -360,7 +368,7 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 	strQuery := query("following") + " returning timeline"
 	var timeline []int64
 
-	if err = tx.QueryRow(ctx, strQuery, in.Followed, in.Follower).Scan(&timeline); err != nil {
+	if err = tx.QueryRow(psqlCtx, strQuery, in.Followed, in.Follower).Scan(&timeline); err != nil {
 		sublogger.Error().Err(err).Str("$1", in.Followed).Str("$2", in.Follower).Msg(strQuery)
 		if err == pgx.ErrNoRows {
 			return nil, tools.GrpcError(codes.NotFound)
@@ -371,7 +379,7 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 	strQuery = query("followers") + " returning tweets"
 	var tweets []int64
 
-	if err = tx.QueryRow(ctx, strQuery, in.Follower, in.Followed).Scan(&tweets); err != nil {
+	if err = tx.QueryRow(psqlCtx, strQuery, in.Follower, in.Followed).Scan(&tweets); err != nil {
 		sublogger.Error().Err(err).Str("$1", in.Follower).Str("$2", in.Followed).Msg(strQuery)
 		if err == pgx.ErrNoRows {
 			return nil, tools.GrpcError(codes.NotFound)
@@ -383,12 +391,12 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 	strQuery = fmt.Sprintf("update users set timeline = array[%s]::integer[] where username = $1",
 		tools.IntArrayToString(newTimeline))
 
-	if _, err = tx.Exec(ctx, strQuery, in.Follower); err != nil {
+	if _, err = tx.Exec(psqlCtx, strQuery, in.Follower); err != nil {
 		sublogger.Error().Err(err).Str("$1", in.Follower).Msg(strQuery)
 		return nil, tools.GrpcError(codes.Internal)
 	}
 
-	if err = tx.Commit(ctx); err != nil {
+	if err = tx.Commit(psqlCtx); err != nil {
 		sublogger.Error().Err(err).Send()
 		return nil, tools.GrpcError(codes.Internal)
 	}
@@ -412,7 +420,7 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 		return
 	}
 
-	rdbCtx, rdbCtxCancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	rdbCtx, rdbCtxCancel := context.WithTimeout(ctx, rdbCtxTimeout)
 	defer rdbCtxCancel()
 
 	key := fmt.Sprintf("%s:delete", msgProto.Username)
@@ -429,7 +437,7 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 	followers := tools.InterfaceToStringArray(vals[0])
 	following := tools.InterfaceToStringArray(vals[1])
 
-	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
 	defer psqlCtxCancel()
 
 	tx, err := pool.BeginTx(psqlCtx, pgx.TxOptions{})
@@ -445,7 +453,7 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 	}
 
 	strQuery := query("following", strings.Join(followers[:], "', '")) + " returning username, timeline"
-	rows, err := tx.Query(ctx, strQuery, msgProto.Username)
+	rows, err := tx.Query(psqlCtx, strQuery, msgProto.Username)
 
 	if err != nil {
 		log.Error().Err(err).Msg(strQuery)
@@ -479,7 +487,7 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 	strQuery = queryBuilder.String()
 
 	if rows.CommandTag().RowsAffected() > 0 && err == nil {
-		if _, err = tx.Exec(ctx, strQuery); err != nil {
+		if _, err = tx.Exec(psqlCtx, strQuery); err != nil {
 			log.Error().Err(err).Msg(strQuery)
 			return
 		}
@@ -487,12 +495,12 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 
 	strQuery = query("followers", strings.Join(following[:], "', '"))
 
-	if _, err = tx.Exec(ctx, strQuery, msgProto.Username); err != nil {
+	if _, err = tx.Exec(psqlCtx, strQuery, msgProto.Username); err != nil {
 		log.Error().Err(err).Msg(strQuery)
 		return
 	}
 
-	if err = tx.Commit(ctx); err != nil {
+	if err = tx.Commit(psqlCtx); err != nil {
 		log.Error().Err(err).Send()
 		return
 	}
@@ -514,17 +522,20 @@ func handleCreateTweet(ctx context.Context, serializedMsg []byte) {
 		return
 	}
 
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
+	defer psqlCtxCancel()
+
+	tx, err := pool.BeginTx(psqlCtx, pgx.TxOptions{})
 	if err != nil {
 		log.Error().Err(err).Send()
 		return
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(psqlCtx)
 
 	var followers []string
 	query := "update users set tweets = array_append(tweets, $1) where username = $2 returning followers"
 
-	if err = tx.QueryRow(ctx, query, msgProto.TweetId, msgProto.Username).Scan(&followers); err != nil {
+	if err = tx.QueryRow(psqlCtx, query, msgProto.TweetId, msgProto.Username).Scan(&followers); err != nil {
 		log.Error().Err(err).
 			Str("$1", strconv.FormatInt(msgProto.TweetId, 10)).
 			Str("$2", msgProto.Username).
@@ -535,14 +546,14 @@ func handleCreateTweet(ctx context.Context, serializedMsg []byte) {
 	query = fmt.Sprintf("update users set timeline = array_append(timeline, $1) where username in ('%s')",
 		strings.Join(followers[:], "', '"))
 
-	if _, err = tx.Exec(ctx, query, msgProto.TweetId); err != nil {
+	if _, err = tx.Exec(psqlCtx, query, msgProto.TweetId); err != nil {
 		log.Error().Err(err).
 			Str("$1", strconv.FormatInt(msgProto.TweetId, 10)).
 			Msg(query)
 		return
 	}
 
-	if err = tx.Commit(ctx); err != nil {
+	if err = tx.Commit(psqlCtx); err != nil {
 		log.Error().Err(err).Send()
 		return
 	}
@@ -560,16 +571,19 @@ func handleDeleteTweets(ctx context.Context, serializedMsg []byte) {
 		return
 	}
 
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
+	defer psqlCtxCancel()
+
+	tx, err := pool.BeginTx(psqlCtx, pgx.TxOptions{})
 	if err != nil {
 		log.Error().Err(err).Send()
 		return
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(psqlCtx)
 
 	strTweets := tools.IntArrayToString(msgProto.Tweets)
 	query := fmt.Sprintf("select username, tweets, timeline from users where timeline && array[%[1]v] or tweets && array[%[1]v]", strTweets)
-	rows, err := tx.Query(ctx, query)
+	rows, err := tx.Query(psqlCtx, query)
 
 	if err != nil {
 		log.Error().Err(err).Msg(query)
@@ -598,12 +612,12 @@ func handleDeleteTweets(ctx context.Context, serializedMsg []byte) {
 	queryBuilder.WriteString(") as u2(username, tweets, timeline) where u2.username = u1.username")
 	query = queryBuilder.String()
 
-	if _, err := tx.Exec(ctx, query); err != nil {
+	if _, err := tx.Exec(psqlCtx, query); err != nil {
 		log.Error().Err(err).Msg(query)
 		return
 	}
 
-	if err = tx.Commit(ctx); err != nil {
+	if err = tx.Commit(psqlCtx); err != nil {
 		log.Error().Err(err).Send()
 		return
 	}
