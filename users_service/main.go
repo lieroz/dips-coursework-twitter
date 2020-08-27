@@ -476,7 +476,7 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 			})
 
 			queryBuilder.WriteString(fmt.Sprintf("('%s', array[%s]::integer[]),",
-				username, strings.Trim(strings.Replace(fmt.Sprint(newTimeline), " ", ", ", -1), "[]")))
+				username, tools.IntArrayToString(newTimeline)))
 		}
 	}
 
@@ -604,8 +604,7 @@ func handleDeleteTweets(ctx context.Context, serializedMsg []byte) {
 		newTimeline := tools.Difference(timeline, msgProto.Tweets)
 		newTweets := tools.Difference(tweets, msgProto.Tweets)
 		queryBuilder.WriteString(fmt.Sprintf("('%s', array[%s]::integer[], array[%s]::integer[]),",
-			username, strings.Trim(strings.Replace(fmt.Sprint(newTweets), " ", ", ", -1), "[]"),
-			strings.Trim(strings.Replace(fmt.Sprint(newTimeline), " ", ", ", -1), "[]")))
+			username, tools.IntArrayToString(newTweets), tools.IntArrayToString(newTimeline)))
 	}
 
 	queryBuilder.Truncate(queryBuilder.Len() - 1)
