@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	// "io"
 	"net"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,22 +58,16 @@ func (*UsersServerImpl) CreateUser(ctx context.Context, in *pb.CreateRequest) (*
 		return nil, tools.GrpcError(codes.InvalidArgument)
 	}
 
-	cmdTag, err := pool.Exec(ctx,
-		"insert into users (username, firstname, lastname, description) values ($1, $2, $3, $4) on conflict do nothing",
-		in.Username,
-		in.Firstname,
-		in.Lastname,
-		in.Description,
-	)
+	query := "insert into users (username, firstname, lastname, description) values ($1, $2, $3, $4) on conflict do nothing"
+	cmdTag, err := pool.Exec(ctx, query, in.Username, in.Firstname, in.Lastname, in.Description)
 
 	if err != nil {
-		sublogger.Error().Err(err).Msgf(
-			"insert into users (username, firstname, lastname, description) values (%s, %s, %s, %s) on conflict do nothing",
-			in.Username,
-			in.Firstname,
-			in.Lastname,
-			in.Description,
-		)
+		sublogger.Error().Err(err).
+			Str("$1", in.Username).
+			Str("$2", in.Firstname).
+			Str("$3", in.Lastname).
+			Str("$4", in.Description).
+			Msg(query)
 		return nil, tools.GrpcError(codes.Internal)
 	}
 
@@ -101,15 +95,11 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
 	defer psqlCtxCancel()
 
-	if err := pool.QueryRow(psqlCtx,
-		"select followers, following, tweets from users where username = $1",
-		in.Username).Scan(
-		&followers,
-		&following,
-		&tweets,
-	); err != nil {
-		sublogger.Error().Err(err).Msgf(
-			"select followers, following, tweets from users where username = %s", in.Username)
+	query := "select followers, following, tweets from users where username = $1"
+
+	if err := pool.QueryRow(psqlCtx, in.Username).
+		Scan(query, &followers, &following, &tweets); err != nil {
+		sublogger.Error().Err(err).Str("$1", in.Username).Msg(query)
 		return nil, tools.GrpcError(codes.Internal)
 	}
 
@@ -165,9 +155,11 @@ func (*UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummar
 	var timestamp time.Time
 
 	summary := &pb.GetSummaryReply{}
-	if err := pool.QueryRow(ctx, `select username, firstname, lastname, description,
+	query := `select username, firstname, lastname, description,
 		registration_timestamp, cardinality(followers), cardinality(following), cardinality(tweets)
-		from users where username = $1`, in.Username).Scan(
+		from users where username = $1`
+
+	if err := pool.QueryRow(ctx, query, in.Username).Scan(
 		&summary.Username,
 		&summary.Firstname,
 		&summary.Lastname,
@@ -177,10 +169,7 @@ func (*UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummar
 		&summary.FollowingCount,
 		&summary.TweetsCount,
 	); err != nil {
-		sublogger.Error().Err(err).Msgf(
-			`select username, firstname, lastname, description, registration_timestamp,
-			cardinality(followers), cardinality(following), cardinality(tweets)
-			from users where username = %s`, in.Username)
+		sublogger.Error().Err(err).Str("$1", in.Username).Msg(query)
 		if err == pgx.ErrNoRows {
 			return nil, tools.GrpcError(codes.NotFound)
 		}
@@ -219,6 +208,7 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 		registration_timestamp, followers, following, tweets 
 		from users where username in ('%s')`, strings.Join(users[:], "', '"))
 	rows, err := pool.Query(psqlCtx, query)
+
 	if err != nil {
 		log.Error().Err(err).Msg(query)
 		return tools.GrpcError(codes.Internal)
@@ -259,81 +249,79 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 }
 
 func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.Empty, error) {
-	// if in.GetFollower() == "" {
-	// 	return nil, status.Errorf(codes.InvalidArgument, "'follower' field can't be empty")
-	// }
-	// if in.GetFollowed() == "" {
-	// 	return nil, status.Errorf(codes.InvalidArgument, "'followed' field can't be empty")
-	// }
-	// if in.GetFollower() == in.GetFollowed() {
-	// 	return nil, status.Errorf(codes.InvalidArgument, "user can't follow himself")
-	// }
+	p, _ := peer.FromContext(ctx)
+	sublogger := log.With().
+		Str("client ip", p.Addr.String()).
+		Logger()
 
-	// tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
-	// if err != nil {
-	// 	return nil, status.Errorf(codes.Internal, "%s", err)
-	// }
-	// defer tx.Rollback(ctx)
+	if in.GetFollower() == "" {
+		sublogger.Error().Msg("'follower' field can't be empty")
+		return nil, tools.GrpcError(codes.InvalidArgument)
+	}
+	if in.GetFollowed() == "" {
+		sublogger.Error().Msg("'followed' field can't be empty")
+		return nil, tools.GrpcError(codes.InvalidArgument)
+	}
+	if in.GetFollower() == in.GetFollowed() {
+		sublogger.Error().Msg("user can't follow himself")
+		return nil, tools.GrpcError(codes.InvalidArgument)
+	}
 
-	// query := func(v string) string {
-	// 	return fmt.Sprintf(`update users set %[1]v = array_append(%[1]v, $1::varchar) where username = $2
-	// 		and exists (select 1 from users where username = $2 and not ($1 = any(%[1]v)))`, v)
-	// }
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		sublogger.Error().Err(err).Send()
+		return nil, tools.GrpcError(codes.Internal)
+	}
+	defer tx.Rollback(ctx)
 
-	// var timeline []int64
-	// if err = tx.QueryRow(ctx, fmt.Sprintf(query("following"))+" returning timeline",
-	// 	in.GetFollowed(), in.GetFollower()).Scan(&timeline); err != nil {
-	// 	if err == pgx.ErrNoRows {
-	// 		return nil, status.Errorf(codes.NotFound,
-	// 			"user '%s' is already following '%s' or doesn't exist",
-	// 			in.GetFollower(), in.GetFollowed())
-	// 	}
-	// 	return nil, status.Errorf(codes.Internal, "%s", err)
-	// }
+	query := func(v string) string {
+		return fmt.Sprintf(`update users set %[1]v = array_append(%[1]v, $1::varchar) where username = $2
+			and exists (select 1 from users where username = $2 and not ($1 = any(%[1]v)))`, v)
+	}
 
-	// var tweets []int64
-	// if err = tx.QueryRow(ctx, fmt.Sprintf(query("followers"))+" returning tweets",
-	// 	in.GetFollower(), in.GetFollowed()).Scan(&tweets); err != nil {
-	// 	if err == pgx.ErrNoRows {
-	// 		return nil, status.Errorf(codes.NotFound,
-	// 			"user '%s' is already followed by '%s' or doesn't exist",
-	// 			in.GetFollowed(), in.GetFollower())
-	// 	}
-	// 	return nil, status.Errorf(codes.Internal, "%s", err)
-	// }
+	var timeline []int64
+	strQuery := fmt.Sprintf(query("following")) + " returning timeline"
 
-	// timeline = append(timeline, tweets...)
+	if err = tx.QueryRow(ctx, strQuery, in.Followed, in.Follower).Scan(&timeline); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, tools.GrpcError(codes.NotFound)
+		}
+		sublogger.Error().Err(err).Msg(strQuery)
+		return nil, tools.GrpcError(codes.Internal)
+	}
 
-	// if len(timeline) != 0 {
-	// 	// read below
-	// 	stream, err := tweetsClient.GetOrderedTimeline(ctx)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
+	var tweets []int64
+	strQuery = fmt.Sprintf(query("followers")) + " returning tweets"
+	if err = tx.QueryRow(ctx, strQuery, in.Follower, in.Followed).Scan(&tweets); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, tools.GrpcError(codes.NotFound)
+		}
+		sublogger.Error().Err(err).Msg(strQuery)
+		return nil, tools.GrpcError(codes.Internal)
+	}
 
-	// 	if err = stream.Send(&pb.Timeline{Timeline: timeline}); err != nil {
-	// 		return nil, err
-	// 	} else {
-	// 		stream.CloseSend()
-	// 		r, err := stream.Recv()
-	// 		if err != nil && err != io.EOF {
-	// 			return nil, err
-	// 		}
+	timeline = append(timeline, tweets...)
 
-	// 		if _, err = tx.Exec(ctx, fmt.Sprintf("update users set timeline = array[%s]::integer[] where username = $1",
-	// 			tools.intArrayToString(r.GetTimeline())),
-	// 			in.Follower); err != nil {
-	// 			return nil, status.Errorf(codes.Internal, "%s", err)
-	// 		}
-	// 	}
-	// }
+	if len(timeline) != 0 {
+		// sort by tweets id, cause greater id means that tweet was created later
+		// id is stored in bigserial which is 2^63-1, so we don't have to worry about renewing it
+		sort.Slice(timeline, func(i, j int) bool {
+			return timeline[i] > timeline[j]
+		})
 
-	// // FIXME: here commit may fail only if smth is wrong with database itself
-	// // or machine which runs it, so better send tx abort to tweets service to rollback
-	// // but this is a prototype service for coursework, so just ignore it
-	// if err = tx.Commit(ctx); err != nil {
-	// 	return nil, status.Errorf(codes.Internal, "%s", err)
-	// }
+		strQuery = fmt.Sprintf("update users set timeline = array[%s]::integer[] where username = $1",
+			tools.IntArrayToString(timeline))
+
+		if _, err = tx.Exec(ctx, strQuery, in.Follower); err != nil {
+			sublogger.Error().Err(err).Msg(strQuery)
+			return nil, tools.GrpcError(codes.Internal)
+		}
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		sublogger.Error().Err(err).Send()
+		return nil, tools.GrpcError(codes.Internal)
+	}
 
 	return &pb.Empty{}, nil
 }
@@ -411,16 +399,16 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 	msgProto := &pb.NatsDeleteUserMessage{}
 	if err := proto.Unmarshal(serializedMsg, msgProto); err != nil {
-		//TODO: add logging
+		log.Error().Err(err).Send()
 		return
 	}
 
 	if msgProto.GetUsername() == "" {
-		//TODO: add logging
+		log.Error().Msg("'username' field can't be empty")
 		return
 	}
 	if msgProto.GetTweets() == nil {
-		//TODO: add logging
+		log.Error().Msg("'tweets' field can't be empty")
 		return
 	}
 
@@ -433,7 +421,7 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 	pipe.Del(rdbCtx, key)
 
 	if _, err := pipe.Exec(rdbCtx); err != nil {
-		//TODO: add logging
+		log.Error().Err(err).Send()
 		return
 	}
 
@@ -446,7 +434,7 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 
 	tx, err := pool.BeginTx(psqlCtx, pgx.TxOptions{})
 	if err != nil {
-		//TODO: add logging
+		log.Error().Err(err).Send()
 		return
 	}
 	defer tx.Rollback(psqlCtx)
@@ -456,20 +444,21 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 			field, users)
 	}
 
-	rows, err := tx.Query(ctx, query("following", strings.Join(followers[:], "', '"))+" returning username, timeline",
-		msgProto.Username)
+	strQuery := query("following", strings.Join(followers[:], "', '")) + " returning username, timeline"
+	rows, err := tx.Query(ctx, strQuery, msgProto.Username)
+
 	if err != nil {
-		//TODO: add logging
+		log.Error().Err(err).Msg(strQuery)
 		return
 	}
 
 	var username string
 	var timeline []int64
-	strQuery := bytes.NewBufferString("update users as u1 set timeline = u2.timeline from (values")
+	queryBuilder := bytes.NewBufferString("update users as u1 set timeline = u2.timeline from (values")
 
 	for rows.Next() {
 		if err = rows.Scan(&username, &timeline); err != nil {
-			// log.Println(err) //TODO: add logging
+			log.Error().Err(err).Send()
 		} else {
 			newTimeline := tools.Difference(timeline, msgProto.Tweets)[:]
 			// sort by tweets id, cause greater id means that tweet was created later
@@ -478,30 +467,33 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 				return newTimeline[i] > newTimeline[j]
 			})
 
-			strQuery.WriteString(fmt.Sprintf("('%s', array[%s]::integer[]),",
+			queryBuilder.WriteString(fmt.Sprintf("('%s', array[%s]::integer[]),",
 				username, strings.Trim(strings.Replace(fmt.Sprint(newTimeline), " ", ", ", -1), "[]")))
 		}
 	}
 
-	strQuery.Truncate(strQuery.Len() - 1)
-	strQuery.WriteString(") as u2(username, timeline) where u2.username = u1.username")
+	queryBuilder.Truncate(queryBuilder.Len() - 1)
+	queryBuilder.WriteString(") as u2(username, timeline) where u2.username = u1.username")
 	rows.Close()
 
+	strQuery = queryBuilder.String()
+
 	if rows.CommandTag().RowsAffected() > 0 && err == nil {
-		if _, err = tx.Exec(ctx, strQuery.String()); err != nil {
-			//TODO: add logging
+		if _, err = tx.Exec(ctx, strQuery); err != nil {
+			log.Error().Err(err).Msg(strQuery)
 			return
 		}
 	}
 
-	if _, err = tx.Exec(ctx, query("followers", strings.Join(following[:], "', '")),
-		msgProto.Username); err != nil {
-		//TODO: add logging
+	strQuery = query("followers", strings.Join(following[:], "', '"))
+
+	if _, err = tx.Exec(ctx, strQuery, msgProto.Username); err != nil {
+		log.Error().Err(err).Msg(strQuery)
 		return
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		//TODO: add logging
+		log.Error().Err(err).Send()
 		return
 	}
 }
@@ -509,41 +501,49 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 func handleCreateTweet(ctx context.Context, serializedMsg []byte) {
 	msgProto := &pb.NatsCreateTweetMessage{}
 	if err := proto.Unmarshal(serializedMsg, msgProto); err != nil {
-		//TODO: add logging
+		log.Error().Err(err).Send()
 		return
 	}
 
 	if msgProto.GetUsername() == "" {
-		//TODO: add logging
+		log.Error().Msg("'username' field can't be empty")
 		return
 	}
 	if msgProto.GetTweetId() == 0 {
-		//TODO: add logging
+		log.Error().Msg("'tweet_id' field can't be omitted")
 		return
 	}
 
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		//TODO: add logging
+		log.Error().Err(err).Send()
 		return
 	}
 	defer tx.Rollback(ctx)
 
 	var followers []string
-	if err = tx.QueryRow(ctx, "update users set tweets = array_append(tweets, $1) where username = $2 returning followers",
-		msgProto.TweetId, msgProto.Username).Scan(&followers); err != nil {
-		//TODO: add logging
+	query := "update users set tweets = array_append(tweets, $1) where username = $2 returning followers"
+
+	if err = tx.QueryRow(ctx, query, msgProto.TweetId, msgProto.Username).Scan(&followers); err != nil {
+		log.Error().Err(err).
+			Str("$1", strconv.FormatInt(msgProto.TweetId, 10)).
+			Str("$2", msgProto.Username).
+			Msg(query)
 		return
 	}
 
-	if _, err = tx.Exec(ctx, fmt.Sprintf("update users set timeline = array_append(timeline, $1) where username in ('%s')",
-		strings.Join(followers[:], "', '")), msgProto.TweetId); err != nil {
-		//TODO: add logging
+	query = fmt.Sprintf("update users set timeline = array_append(timeline, $1) where username in ('%s')",
+		strings.Join(followers[:], "', '"))
+
+	if _, err = tx.Exec(ctx, query, msgProto.TweetId); err != nil {
+		log.Error().Err(err).
+			Str("$1", strconv.FormatInt(msgProto.TweetId, 10)).
+			Msg(query)
 		return
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		//TODO: add logging
+		log.Error().Err(err).Send()
 		return
 	}
 }
@@ -551,57 +551,60 @@ func handleCreateTweet(ctx context.Context, serializedMsg []byte) {
 func handleDeleteTweets(ctx context.Context, serializedMsg []byte) {
 	msgProto := &pb.NatsDeleteTweetsMessage{}
 	if err := proto.Unmarshal(serializedMsg, msgProto); err != nil {
-		//TODO: add logging
+		log.Error().Err(err).Send()
 		return
 	}
 
 	if msgProto.GetTweets() == nil {
-		//TODO: add logging
+		log.Error().Msg("'tweets' field can't be empty")
 		return
 	}
 
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		//TODO: add logging
+		log.Error().Err(err).Send()
 		return
 	}
 	defer tx.Rollback(ctx)
 
 	strTweets := tools.IntArrayToString(msgProto.Tweets)
-	rows, err := tx.Query(ctx, fmt.Sprintf("select username, tweets, timeline from users where timeline && array[%[1]v] or tweets && array[%[1]v]", strTweets))
+	query := fmt.Sprintf("select username, tweets, timeline from users where timeline && array[%[1]v] or tweets && array[%[1]v]", strTweets)
+	rows, err := tx.Query(ctx, query)
+
 	if err != nil {
-		//TODO: add logging
+		log.Error().Err(err).Msg(query)
 		return
 	}
 
 	var username string
 	var tweets []int64
 	var timeline []int64
-	strQuery := bytes.NewBufferString("update users as u1 set tweets = u2.tweets, timeline = u2.timeline from (values")
+	queryBuilder := bytes.NewBufferString("update users as u1 set tweets = u2.tweets, timeline = u2.timeline from (values")
 
 	for rows.Next() {
 		if err = rows.Scan(&username, &tweets, &timeline); err != nil {
-			//TODO: add logging
+			log.Error().Err(err).Send()
 			return
 		}
 
 		newTimeline := tools.Difference(timeline, msgProto.Tweets)
 		newTweets := tools.Difference(tweets, msgProto.Tweets)
-		strQuery.WriteString(fmt.Sprintf("('%s', array[%s]::integer[], array[%s]::integer[]),",
+		queryBuilder.WriteString(fmt.Sprintf("('%s', array[%s]::integer[], array[%s]::integer[]),",
 			username, strings.Trim(strings.Replace(fmt.Sprint(newTweets), " ", ", ", -1), "[]"),
 			strings.Trim(strings.Replace(fmt.Sprint(newTimeline), " ", ", ", -1), "[]")))
 	}
 
-	strQuery.Truncate(strQuery.Len() - 1)
-	strQuery.WriteString(") as u2(username, tweets, timeline) where u2.username = u1.username")
+	queryBuilder.Truncate(queryBuilder.Len() - 1)
+	queryBuilder.WriteString(") as u2(username, tweets, timeline) where u2.username = u1.username")
+	query = queryBuilder.String()
 
-	if _, err := tx.Exec(ctx, strQuery.String()); err != nil {
-		//TODO: add logging
+	if _, err := tx.Exec(ctx, query); err != nil {
+		log.Error().Err(err).Msg(query)
 		return
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		//TODO: add logging
+		log.Error().Err(err).Send()
 		return
 	}
 }
