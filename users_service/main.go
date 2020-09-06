@@ -133,7 +133,8 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 	}
 
 	if err := nc.Publish("tweets", serializedMsg); err != nil {
-		sublogger.Error().Err(err).Str("nats command", pb.NatsMessage_Command_name[int32(pb.NatsMessage_DeleteUser)]).Send()
+		sublogger.Error().Err(err).Str("nats command",
+			pb.NatsMessage_Command_name[int32(pb.NatsMessage_DeleteUser)]).Send()
 		return nil, tools.GrpcError(codes.Internal)
 	}
 
@@ -645,8 +646,10 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	log.Logger = log.With().Caller().Logger()
 
+	psqlUrl := "postgres://user:password@localhost:5432/twitter_db?pool_max_conns=2"
+
 	var err error
-	if pool, err = pgxpool.Connect(context.Background(), os.Getenv("DATABASE_URL")); err != nil {
+	if pool, err = pgxpool.Connect(context.Background(), psqlUrl); err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to postgresql server")
 	}
 

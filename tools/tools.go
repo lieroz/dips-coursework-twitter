@@ -8,7 +8,6 @@ import (
 	status "google.golang.org/grpc/status"
 )
 
-//FIXME: move unused to end and then remove by slicing
 func Difference(a, b []int64) (diff []int64) {
 	m := make(map[int64]bool)
 

@@ -3,29 +3,36 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
-	"log"
 	"net"
 	"os"
-	"strings"
+	"strconv"
 	"time"
 
-	"github.com/jackc/pgx/v4"
+	"github.com/go-redis/redis/v8"
+	"github.com/golang/protobuf/proto"
 	"github.com/jackc/pgx/v4/pgxpool"
+	nats "github.com/nats-io/nats.go"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
-	status "google.golang.org/grpc/status"
+	"google.golang.org/grpc/peer"
 
 	pb "github.com/lieroz/dips-coursework-twitter/protos"
+	"github.com/lieroz/dips-coursework-twitter/tools"
 )
 
 var (
-	pool        *pgxpool.Pool
-	usersClient pb.UsersClient
+	pool *pgxpool.Pool
+	nc   *nats.Conn
+	rdb  *redis.Client
 )
 
 const (
-	port = ":8002"
+	port           = ":8002"
+	rdbCtxTimeout  = 100 * time.Millisecond
+	psqlCtxTimeout = 100 * time.Millisecond
+	ncWriteTimeout = 100 * time.Millisecond
 )
 
 type TweetsServerImpl struct {
@@ -33,40 +40,58 @@ type TweetsServerImpl struct {
 }
 
 func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequest) (*pb.Empty, error) {
+	p, _ := peer.FromContext(ctx)
+	sublogger := log.With().
+		Str("client ip", p.Addr.String()).
+		Logger()
+
 	if in.GetCreator() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "'creator' field can't be empty")
+		sublogger.Error().Msg("'creator' field can't be empty")
+		return nil, tools.GrpcError(codes.InvalidArgument)
 	}
 	if in.GetContent() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "'content' field can't be empty")
+		sublogger.Error().Msg("'content' field can't be empty")
+		return nil, tools.GrpcError(codes.InvalidArgument)
 	}
 
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	query := "insert into tweets (parent_id, creator, content) select $1, $2, $3 returning id"
+	var id int64
+
+	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
+	defer psqlCtxCancel()
+
+	if err := pool.QueryRow(psqlCtx,
+		query,
+		in.ParentId,
+		in.Creator,
+		in.Content,
+	).Scan(&id); err != nil {
+		sublogger.Error().Err(err).
+			Str("$1", strconv.FormatInt(in.ParentId, 10)).
+			Str("$2", in.Creator).
+			Str("$3", in.Content).
+			Msg(query)
+		return nil, tools.GrpcError(codes.Internal)
+	}
+
+	cmdProto := &pb.NatsCreateTweetMessage{Username: in.Creator, TweetId: id}
+	serializedCmd, err := proto.Marshal(cmdProto)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
+		sublogger.Error().Err(err).Str("protobuf message", "NatsCreateTweetMessage").Send()
+		return nil, tools.GrpcError(codes.Internal)
 	}
-	defer tx.Rollback(ctx)
 
-	var id int
-	err = tx.QueryRow(ctx,
-		"insert into tweets (parent_id, creator, content) select $1, $2, $3 returning id",
-		in.GetParentId(),
-		in.GetCreator(),
-		in.GetContent(),
-	).Scan(&id)
-
+	msgProto := &pb.NatsMessage{Command: pb.NatsMessage_CreateTweet, Message: serializedCmd}
+	serializedMsg, err := proto.Marshal(msgProto)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
+		sublogger.Error().Err(err).Str("protobuf message", "NatsMessage").Send()
+		return nil, tools.GrpcError(codes.Internal)
 	}
 
-	if _, err = usersClient.OnTweetCreated(ctx, &pb.OnTweetCreatedRequest{
-		Username: in.GetCreator(),
-		TweetId:  int64(id),
-	}); err != nil {
-		return nil, err
-	}
-
-	if err = tx.Commit(ctx); err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
+	if err := nc.Publish("users", serializedMsg); err != nil {
+		sublogger.Error().Err(err).Str("nats command",
+			pb.NatsMessage_Command_name[int32(pb.NatsMessage_CreateTweet)]).Send()
+		return nil, tools.GrpcError(codes.Internal)
 	}
 
 	return &pb.Empty{}, nil
@@ -74,14 +99,18 @@ func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequ
 
 func (*TweetsServerImpl) GetTweets(in *pb.GetTweetsRequest, stream pb.Tweets_GetTweetsServer) error {
 	if in.GetTweets() == nil {
-		return status.Errorf(codes.InvalidArgument, "'tweets' field can't be empty")
+		log.Error().Msg("'tweets' field can't be empty")
+		return tools.GrpcError(codes.InvalidArgument)
 	}
 
-	query := fmt.Sprintf("select * from tweets where id in (%s)",
-		strings.Trim(strings.Replace(fmt.Sprint(in.GetTweets()), " ", ", ", -1), "[]"))
-	rows, err := pool.Query(context.Background(), query)
+	psqlCtx, psqlCtxCancel := context.WithTimeout(context.Background(), psqlCtxTimeout)
+	defer psqlCtxCancel()
+
+	query := fmt.Sprintf("select * from tweets where id in (%s)", tools.IntArrayToString(in.Tweets))
+	rows, err := pool.Query(psqlCtx, query)
 	if err != nil {
-		return status.Errorf(codes.Internal, "%s", err)
+		log.Error().Err(err).Msg(query)
+		return tools.GrpcError(codes.Internal)
 	}
 
 	tweet := pb.Tweet{}
@@ -96,128 +125,149 @@ func (*TweetsServerImpl) GetTweets(in *pb.GetTweetsRequest, stream pb.Tweets_Get
 			&tweet.Content,
 			&timestamp); err != nil {
 			reply.Reply = &pb.GetTweetsReply_Error{Error: true}
-			log.Println(err)
+			log.Error().Err(err).Send()
 		} else {
 			tweet.CreationTimestamp = timestamp.Unix()
 			reply.Reply = &pb.GetTweetsReply_Tweet{Tweet: &tweet}
 			if err = stream.Send(&reply); err != nil {
-				return status.Errorf(codes.Internal, "%s", err)
+				log.Error().Err(err).Send()
+				return tools.GrpcError(codes.Internal)
 			}
 		}
 	}
 
 	if rows.Err() != nil {
-		return status.Errorf(codes.Internal, "%s", rows.Err())
+		log.Error().Err(rows.Err()).Send()
+		return tools.GrpcError(codes.Internal)
 	}
 
 	return nil
 }
 
 func (*TweetsServerImpl) EditTweet(ctx context.Context, in *pb.EditTweetRequest) (*pb.Empty, error) {
+	p, _ := peer.FromContext(ctx)
+	sublogger := log.With().
+		Str("client ip", p.Addr.String()).
+		Logger()
+
 	if in.GetId() == 0 {
-		return nil, status.Errorf(codes.InvalidArgument, "'id' field can't be omitted")
+		sublogger.Error().Msg("'id' field can't be omitted")
+		return nil, tools.GrpcError(codes.InvalidArgument)
 	}
 	if in.GetContent() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "'content' field can't be empty")
+		sublogger.Error().Msg("'content' field can't be empty")
+		return nil, tools.GrpcError(codes.InvalidArgument)
 	}
+	psqlCtx, psqlCtxCancel := context.WithTimeout(context.Background(), psqlCtxTimeout)
+	defer psqlCtxCancel()
 
-	if _, err := pool.Exec(ctx, "update tweets set content = $1 where id = $2",
-		in.GetContent(), in.GetId()); err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
+	query := "update tweets set content = $1 where id = $2"
+	if _, err := pool.Exec(psqlCtx, query, in.Content, in.Id); err != nil {
+		sublogger.Error().Err(err).
+			Str("$1", in.Content).
+			Str("$2", strconv.FormatInt(in.Id, 10)).
+			Msg(query)
+		return nil, tools.GrpcError(codes.Internal)
 	}
 
 	return &pb.Empty{}, nil
 }
 
 func (*TweetsServerImpl) DeleteTweets(ctx context.Context, in *pb.DeleteTweetsRequest) (*pb.Empty, error) {
+	p, _ := peer.FromContext(ctx)
+	sublogger := log.With().
+		Str("client ip", p.Addr.String()).
+		Logger()
+
 	if in.GetId() == nil {
-		return nil, status.Errorf(codes.InvalidArgument, "'id' field can't be omitted")
+		sublogger.Error().Msg("'id' field can't be omitted")
+		return nil, tools.GrpcError(codes.InvalidArgument)
 	}
 
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	psqlCtx, psqlCtxCancel := context.WithTimeout(context.Background(), psqlCtxTimeout)
+	defer psqlCtxCancel()
+
+	query := fmt.Sprintf("delete from tweets where id in (%s)", tools.IntArrayToString(in.Id))
+	if _, err := pool.Exec(psqlCtx, query); err != nil {
+		sublogger.Error().Err(err).Msg(query)
+		return nil, tools.GrpcError(codes.Internal)
+	}
+
+	cmdProto := &pb.NatsDeleteTweetsMessage{Tweets: in.Id}
+	serializedCmd, err := proto.Marshal(cmdProto)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
-	}
-	defer tx.Rollback(ctx)
-
-	if _, err := tx.Exec(ctx, fmt.Sprintf("delete from tweets where id in (%s)",
-		strings.Trim(strings.Replace(fmt.Sprint(in.GetId()), " ", ", ", -1), "[]"))); err != nil {
-		return nil, err
+		sublogger.Error().Err(err).Str("protobuf message", "NatsDeleteTweetMessage").Send()
+		return nil, tools.GrpcError(codes.Internal)
 	}
 
-	if in.GetContext() == pb.DeleteTweetsRequest_Client {
-		if _, err = usersClient.OnTweetsDeleted(ctx, &pb.OnTweetsDeletedRequest{TweetId: in.GetId()}); err != nil {
-			return nil, err
-		}
+	msgProto := &pb.NatsMessage{Command: pb.NatsMessage_DeleteTweet, Message: serializedCmd}
+	serializedMsg, err := proto.Marshal(msgProto)
+	if err != nil {
+		sublogger.Error().Err(err).Str("protobuf message", "NatsMessage").Send()
+		return nil, tools.GrpcError(codes.Internal)
 	}
 
-	if err = tx.Commit(ctx); err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err)
+	if err := nc.Publish("users", serializedMsg); err != nil {
+		sublogger.Error().Err(err).Str("nats command",
+			pb.NatsMessage_Command_name[int32(pb.NatsMessage_DeleteTweet)]).Send()
+		return nil, tools.GrpcError(codes.Internal)
 	}
 
 	return &pb.Empty{}, nil
 }
 
-func (*TweetsServerImpl) GetOrderedTimeline(stream pb.Tweets_GetOrderedTimelineServer) error {
-	ctx := context.Background()
+func natsCallback(natsMsg *nats.Msg) {
+	// ctx, cancel := context.WithCancel(context.Background())
+	// defer cancel()
 
-	for {
-		in, err := stream.Recv()
-		if err == io.EOF {
-			return nil
-		}
+	msg := &pb.NatsMessage{}
+	proto.Unmarshal(natsMsg.Data, msg)
 
-		if err != nil {
-			log.Println(err)
-		} else {
-			if rows, err := pool.Query(ctx, fmt.Sprintf("select id from tweets where id in (%s) group by id order by creation_timestamp",
-				strings.Trim(strings.Replace(fmt.Sprint(in.GetTimeline()), " ", ", ", -1), "[]"))); err != nil {
-				log.Println(err)
-			} else {
-				timeline := pb.Timeline{}
-				var tweetId int64
-
-				for rows.Next() {
-					if err := rows.Scan(&tweetId); err != nil {
-						log.Println(err)
-					} else {
-						timeline.Timeline = append(timeline.Timeline, tweetId)
-					}
-				}
-
-				if err = stream.Send(&timeline); err != nil {
-					log.Println(err)
-				}
-
-				if rows.Err() != nil {
-					log.Println(err)
-				}
-			}
-		}
-	}
+	// switch msg.Command {
+	// case pb.NatsMessage_DeleteUser:
+	// 	handleDeleteUser(ctx, msg.Message)
+	// case pb.NatsMessage_CreateTweet:
+	// 	handleCreateTweet(ctx, msg.Message)
+	// case pb.NatsMessage_DeleteTweet:
+	// 	handleDeleteTweets(ctx, msg.Message)
+	// }
 }
 
 func main() {
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
+	log.Logger = log.With().Caller().Logger()
+
+	psqlUrl := "postgres://user:password@localhost:5432/twitter_db?pool_max_conns=2"
+
+	var err error
+	if pool, err = pgxpool.Connect(context.Background(), psqlUrl); err != nil {
+		log.Fatal().Err(err).Msg("Failed to connect to postgresql server")
+	}
+
+	//TODO: add connect timeout + ping/pong
+	if nc, err = nats.Connect(nats.DefaultURL); err != nil {
+		log.Fatal().Err(err).Msg("Failed to connect to nats server")
+	}
+	nc.QueueSubscribe("tweets", "users_queue", natsCallback)
+	nc.Flush()
+	defer nc.Close()
+
+	rdb = redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		PoolSize: 2,
+	})
+
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
+		log.Fatal().Err(err).Msg("Failed to listen")
 	}
-	log.Printf("Start listening on: %s", port)
-
-	pool, err = pgxpool.Connect(context.Background(), os.Getenv("DATABASE_URL"))
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
-
-	conn, err := grpc.Dial("localhost:8001", grpc.WithInsecure())
-	if err != nil {
-	}
-	defer conn.Close()
-	usersClient = pb.NewUsersClient(conn)
+	log.Info().Msgf("Start listening on: %s", port)
 
 	s := grpc.NewServer()
 	pb.RegisterTweetsServer(s, &TweetsServerImpl{})
 	if err := s.Serve(lis); err != nil {
-		log.Fatalf("Failed to serve: %v", err)
+		log.Fatal().Err(err).Msg("Failed to serve grpc service")
 	}
 }
