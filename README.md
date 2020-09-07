@@ -4,3 +4,4 @@ Distributed information processing system course work. MVP implmentation of Twit
 # TODO
 * add redis as temporary storage for transactions
 * add checks in code for pending transactions
+* change nats for redis queue

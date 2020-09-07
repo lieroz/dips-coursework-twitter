@@ -96,8 +96,8 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 
 	query := "select followers, following, tweets from users where username = $1"
 
-	if err := pool.QueryRow(psqlCtx, in.Username).
-		Scan(query, &followers, &following, &tweets); err != nil {
+	if err := pool.QueryRow(psqlCtx, query, in.Username).
+		Scan(&followers, &following, &tweets); err != nil {
 		sublogger.Error().Err(err).Str("$1", in.Username).Msg(query)
 		return nil, tools.GrpcError(codes.Internal)
 	}
@@ -121,7 +121,8 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 
 	key := fmt.Sprintf("%s:delete", in.Username)
 	pipe := rdb.Pipeline()
-	pipe.HSet(rdbCtx, key, "followers", followers, "following", following)
+	pipe.HSet(rdbCtx, key, "followers", strings.Join(followers, ","),
+		"following", strings.Join(following, ","))
 	pipe.Expire(rdbCtx, key, 10*time.Second)
 
 	if _, err = pipe.Exec(rdbCtx); err != nil {
