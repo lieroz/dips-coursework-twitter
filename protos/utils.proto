@@ -22,7 +22,7 @@ message NatsMessage {
   enum Command {
     DeleteUser = 0;
     CreateTweet = 1;
-    DeleteTweet = 2;
+    DeleteTweets = 2;
   }
 
   Command command = 1;

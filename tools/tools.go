@@ -23,19 +23,10 @@ func Difference(a, b []int64) (diff []int64) {
 	return
 }
 
-func InterfaceToStringArray(data interface{}) []string {
-	arr := data.([]interface{})
-	result := make([]string, len(arr))
-	for i, v := range arr {
-		result[i] = v.(string)
-	}
-	return result
-}
-
 func IntArrayToString(arr []int64) string {
 	return strings.Trim(strings.Replace(fmt.Sprint(arr), " ", ", ", -1), "[]")
 }
 
-func GrpcError(code codes.Code) error {
-	return status.Error(code, "")
+func GrpcError(code codes.Code, msg string) error {
+	return status.Error(code, msg)
 }

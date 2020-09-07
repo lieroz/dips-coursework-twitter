@@ -19,7 +19,6 @@ const _ = grpc.SupportPackageIsVersion6
 type TweetsClient interface {
 	CreateTweet(ctx context.Context, in *CreateTweetRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetTweets(ctx context.Context, in *GetTweetsRequest, opts ...grpc.CallOption) (Tweets_GetTweetsClient, error)
-	EditTweet(ctx context.Context, in *EditTweetRequest, opts ...grpc.CallOption) (*Empty, error)
 	DeleteTweets(ctx context.Context, in *DeleteTweetsRequest, opts ...grpc.CallOption) (*Empty, error)
 	// private methods
 	GetOrderedTimeline(ctx context.Context, opts ...grpc.CallOption) (Tweets_GetOrderedTimelineClient, error)
@@ -74,15 +73,6 @@ func (x *tweetsGetTweetsClient) Recv() (*GetTweetsReply, error) {
 	return m, nil
 }
 
-func (c *tweetsClient) EditTweet(ctx context.Context, in *EditTweetRequest, opts ...grpc.CallOption) (*Empty, error) {
-	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/Tweets/EditTweet", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *tweetsClient) DeleteTweets(ctx context.Context, in *DeleteTweetsRequest, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
 	err := c.cc.Invoke(ctx, "/Tweets/DeleteTweets", in, out, opts...)
@@ -129,7 +119,6 @@ func (x *tweetsGetOrderedTimelineClient) Recv() (*Timeline, error) {
 type TweetsServer interface {
 	CreateTweet(context.Context, *CreateTweetRequest) (*Empty, error)
 	GetTweets(*GetTweetsRequest, Tweets_GetTweetsServer) error
-	EditTweet(context.Context, *EditTweetRequest) (*Empty, error)
 	DeleteTweets(context.Context, *DeleteTweetsRequest) (*Empty, error)
 	// private methods
 	GetOrderedTimeline(Tweets_GetOrderedTimelineServer) error
@@ -145,9 +134,6 @@ func (*UnimplementedTweetsServer) CreateTweet(context.Context, *CreateTweetReque
 }
 func (*UnimplementedTweetsServer) GetTweets(*GetTweetsRequest, Tweets_GetTweetsServer) error {
 	return status.Errorf(codes.Unimplemented, "method GetTweets not implemented")
-}
-func (*UnimplementedTweetsServer) EditTweet(context.Context, *EditTweetRequest) (*Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method EditTweet not implemented")
 }
 func (*UnimplementedTweetsServer) DeleteTweets(context.Context, *DeleteTweetsRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteTweets not implemented")
@@ -198,24 +184,6 @@ type tweetsGetTweetsServer struct {
 
 func (x *tweetsGetTweetsServer) Send(m *GetTweetsReply) error {
 	return x.ServerStream.SendMsg(m)
-}
-
-func _Tweets_EditTweet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EditTweetRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(TweetsServer).EditTweet(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/Tweets/EditTweet",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TweetsServer).EditTweet(ctx, req.(*EditTweetRequest))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _Tweets_DeleteTweets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -269,10 +237,6 @@ var _Tweets_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateTweet",
 			Handler:    _Tweets_CreateTweet_Handler,
-		},
-		{
-			MethodName: "EditTweet",
-			Handler:    _Tweets_EditTweet_Handler,
 		},
 		{
 			MethodName: "DeleteTweets",

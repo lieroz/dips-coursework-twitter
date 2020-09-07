@@ -50,8 +50,7 @@ func (*UsersServerImpl) CreateUser(ctx context.Context, in *pb.CreateRequest) (*
 		Logger()
 
 	if in.GetUsername() == "" {
-		sublogger.Error().Msg("'username' field can't be empty")
-		return nil, tools.GrpcError(codes.InvalidArgument)
+		return nil, tools.GrpcError(codes.InvalidArgument, "'username' field can't be empty")
 	}
 
 	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
@@ -67,11 +66,11 @@ func (*UsersServerImpl) CreateUser(ctx context.Context, in *pb.CreateRequest) (*
 			Str("$3", in.Lastname).
 			Str("$4", in.Description).
 			Msg(query)
-		return nil, tools.GrpcError(codes.Internal)
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
 	if cmdTag.RowsAffected() == 0 {
-		return nil, tools.GrpcError(codes.AlreadyExists)
+		return nil, tools.GrpcError(codes.AlreadyExists, fmt.Sprintf("user '%s' already exists", in.Username))
 	}
 
 	return &pb.Empty{}, nil
@@ -84,8 +83,7 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 		Logger()
 
 	if in.GetUsername() == "" {
-		sublogger.Error().Msg("'username' field can't be empty")
-		return nil, tools.GrpcError(codes.InvalidArgument)
+		return nil, tools.GrpcError(codes.InvalidArgument, "'username' field can't be empty")
 	}
 
 	var followers, following []string
@@ -99,44 +97,53 @@ func (*UsersServerImpl) DeleteUser(ctx context.Context, in *pb.DeleteRequest) (*
 	if err := pool.QueryRow(psqlCtx, query, in.Username).
 		Scan(&followers, &following, &tweets); err != nil {
 		sublogger.Error().Err(err).Str("$1", in.Username).Msg(query)
-		return nil, tools.GrpcError(codes.Internal)
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
-	cmdProto := &pb.NatsDeleteUserMessage{Username: in.Username, Tweets: tweets}
-	serializedCmd, err := proto.Marshal(cmdProto)
-	if err != nil {
-		sublogger.Error().Err(err).Str("protobuf message", "NatsDeleteUserMessage").Send()
-		return nil, tools.GrpcError(codes.Internal)
-	}
+	if len(tweets) > 0 {
+		cmdProto := &pb.NatsDeleteUserMessage{Username: in.Username, Tweets: tweets}
+		serializedCmd, err := proto.Marshal(cmdProto)
+		if err != nil {
+			sublogger.Error().Err(err).Str("protobuf message", "NatsDeleteUserMessage").Send()
+			return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
+		}
 
-	msgProto := &pb.NatsMessage{Command: pb.NatsMessage_DeleteUser, Message: serializedCmd}
-	serializedMsg, err := proto.Marshal(msgProto)
-	if err != nil {
-		sublogger.Error().Err(err).Str("protobuf message", "NatsMessage").Send()
-		return nil, tools.GrpcError(codes.Internal)
-	}
+		msgProto := &pb.NatsMessage{Command: pb.NatsMessage_DeleteUser, Message: serializedCmd}
+		serializedMsg, err := proto.Marshal(msgProto)
+		if err != nil {
+			sublogger.Error().Err(err).Str("protobuf message", "NatsMessage").Send()
+			return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
+		}
 
-	rdbCtx, rdbCtxCancel := context.WithTimeout(ctx, rdbCtxTimeout)
-	defer rdbCtxCancel()
+		rdbCtx, rdbCtxCancel := context.WithTimeout(ctx, rdbCtxTimeout)
+		defer rdbCtxCancel()
 
-	key := fmt.Sprintf("%s:delete", in.Username)
-	pipe := rdb.Pipeline()
-	pipe.HSet(rdbCtx, key, "followers", strings.Join(followers, ","),
-		"following", strings.Join(following, ","))
-	pipe.Expire(rdbCtx, key, 10*time.Second)
+		key := fmt.Sprintf("%s:delete", in.Username)
+		pipe := rdb.Pipeline()
+		pipe.HSet(rdbCtx, key, "followers", strings.Join(followers, ","),
+			"following", strings.Join(following, ","))
+		pipe.Expire(rdbCtx, key, 10*time.Second)
 
-	if _, err = pipe.Exec(rdbCtx); err != nil {
-		// key in redis will be cleaned up after expiration time if error happened
-		sublogger.Error().Err(err).Msgf(
-			"pipeline hset %[1]v 'followers' '%s' 'following' '%s'; expire %[1]v 10",
-			key, strings.Join(followers[:], ", "), strings.Join(following[:], ", "))
-		return nil, tools.GrpcError(codes.Internal)
-	}
+		if _, err = pipe.Exec(rdbCtx); err != nil {
+			// key in redis will be cleaned up after expiration time if error happened
+			sublogger.Error().Err(err).Msgf(
+				"pipeline hset %[1]v 'followers' '%s' 'following' '%s'; expire %[1]v 10",
+				key, strings.Join(followers[:], ", "), strings.Join(following[:], ", "))
+			return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
+		}
 
-	if err := nc.Publish("tweets", serializedMsg); err != nil {
-		sublogger.Error().Err(err).Str("nats command",
-			pb.NatsMessage_Command_name[int32(pb.NatsMessage_DeleteUser)]).Send()
-		return nil, tools.GrpcError(codes.Internal)
+		if err := nc.Publish("tweets", serializedMsg); err != nil {
+			sublogger.Error().Err(err).Str("nats command",
+				pb.NatsMessage_Command_name[int32(pb.NatsMessage_DeleteUser)]).Send()
+			return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
+		}
+	} else {
+		query := "delete from users where username = $1"
+
+		if _, err := pool.Exec(psqlCtx, query, in.Username); err != nil {
+			sublogger.Error().Err(err).Str("$1", in.Username).Msg(query)
+			return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
+		}
 	}
 
 	return &pb.Empty{}, nil
@@ -149,8 +156,7 @@ func (*UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummar
 		Logger()
 
 	if in.GetUsername() == "" {
-		sublogger.Error().Msg("'username' field can't be empty")
-		return nil, tools.GrpcError(codes.InvalidArgument)
+		return nil, tools.GrpcError(codes.InvalidArgument, "'username' field can't be empty")
 	}
 
 	var timestamp time.Time
@@ -175,9 +181,9 @@ func (*UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummar
 	); err != nil {
 		sublogger.Error().Err(err).Str("$1", in.Username).Msg(query)
 		if err == pgx.ErrNoRows {
-			return nil, tools.GrpcError(codes.NotFound)
+			return nil, tools.GrpcError(codes.NotFound, fmt.Sprintf("user '%s' doesn't exist", in.Username))
 		}
-		return nil, tools.GrpcError(codes.Internal)
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
 	summary.RegistrationTimestamp = timestamp.Unix()
@@ -186,8 +192,7 @@ func (*UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummar
 
 func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUsersServer) error {
 	if in.GetUsername() == "" {
-		log.Error().Msg("'username' field can't be empty")
-		return tools.GrpcError(codes.InvalidArgument)
+		return tools.GrpcError(codes.InvalidArgument, "'username' field can't be empty")
 	}
 
 	query := "select %s from users where username = $1"
@@ -204,8 +209,8 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 	var users []string
 	if err := pool.QueryRow(psqlCtx, query,
 		in.Username).Scan(&users); err != nil {
-		log.Error().Err(err).Msg(query[:len(query)-2] + in.Username)
-		return tools.GrpcError(codes.Internal)
+		log.Error().Err(err).Str("$1", in.Username).Msg(query)
+		return tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
 	query = fmt.Sprintf(`select username, firstname, lastname, description, 
@@ -215,7 +220,7 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 
 	if err != nil {
 		log.Error().Err(err).Msg(query)
-		return tools.GrpcError(codes.Internal)
+		return tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 	defer rows.Close()
 
@@ -239,14 +244,14 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 			reply.Reply = &pb.GetUsersReply_User{User: &user}
 			if err = stream.Send(&reply); err != nil {
 				log.Error().Err(err).Send()
-				return tools.GrpcError(codes.Internal)
+				return tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 			}
 		}
 	}
 
 	if rows.Err() != nil {
 		log.Error().Err(rows.Err()).Send()
-		return tools.GrpcError(codes.Internal)
+		return tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
 	return nil
@@ -259,16 +264,13 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 		Logger()
 
 	if in.GetFollower() == "" {
-		sublogger.Error().Msg("'follower' field can't be empty")
-		return nil, tools.GrpcError(codes.InvalidArgument)
+		return nil, tools.GrpcError(codes.InvalidArgument, "'follower' field can't be empty")
 	}
 	if in.GetFollowed() == "" {
-		sublogger.Error().Msg("'followed' field can't be empty")
-		return nil, tools.GrpcError(codes.InvalidArgument)
+		return nil, tools.GrpcError(codes.InvalidArgument, "'followed' field can't be empty")
 	}
 	if in.GetFollower() == in.GetFollowed() {
-		sublogger.Error().Msg("user can't follow himself")
-		return nil, tools.GrpcError(codes.InvalidArgument)
+		return nil, tools.GrpcError(codes.InvalidArgument, "user can't follow himself")
 	}
 
 	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
@@ -277,7 +279,7 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 	tx, err := pool.BeginTx(psqlCtx, pgx.TxOptions{})
 	if err != nil {
 		sublogger.Error().Err(err).Send()
-		return nil, tools.GrpcError(codes.Internal)
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 	defer tx.Rollback(psqlCtx)
 
@@ -291,20 +293,20 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 
 	if err = tx.QueryRow(psqlCtx, strQuery, in.Followed, in.Follower).Scan(&timeline); err != nil {
 		if err == pgx.ErrNoRows {
-			return nil, tools.GrpcError(codes.NotFound)
+			return nil, tools.GrpcError(codes.NotFound, fmt.Sprintf("user '%s' doesn't exist", in.Follower))
 		}
 		sublogger.Error().Err(err).Msg(strQuery)
-		return nil, tools.GrpcError(codes.Internal)
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
 	var tweets []int64
 	strQuery = fmt.Sprintf(query("followers")) + " returning tweets"
 	if err = tx.QueryRow(psqlCtx, strQuery, in.Follower, in.Followed).Scan(&tweets); err != nil {
 		if err == pgx.ErrNoRows {
-			return nil, tools.GrpcError(codes.NotFound)
+			return nil, tools.GrpcError(codes.NotFound, fmt.Sprintf("user '%s' doesn't exist", in.Followed))
 		}
 		sublogger.Error().Err(err).Msg(strQuery)
-		return nil, tools.GrpcError(codes.Internal)
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
 	timeline = append(timeline, tweets...)
@@ -313,7 +315,7 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 		// sort by tweets id, cause greater id means that tweet was created later
 		// id is stored in bigserial which is 2^63-1, so we don't have to worry about renewing it
 		sort.Slice(timeline, func(i, j int) bool {
-			return timeline[i] > timeline[j]
+			return timeline[i] < timeline[j]
 		})
 
 		strQuery = fmt.Sprintf("update users set timeline = array[%s]::integer[] where username = $1",
@@ -321,13 +323,13 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 
 		if _, err = tx.Exec(psqlCtx, strQuery, in.Follower); err != nil {
 			sublogger.Error().Err(err).Msg(strQuery)
-			return nil, tools.GrpcError(codes.Internal)
+			return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 		}
 	}
 
 	if err = tx.Commit(psqlCtx); err != nil {
 		sublogger.Error().Err(err).Send()
-		return nil, tools.GrpcError(codes.Internal)
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
 	return &pb.Empty{}, nil
@@ -340,16 +342,13 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 		Logger()
 
 	if in.GetFollower() == "" {
-		sublogger.Error().Msg("'follower' field can't be empty")
-		return nil, tools.GrpcError(codes.InvalidArgument)
+		return nil, tools.GrpcError(codes.InvalidArgument, "'follower' field can't be empty")
 	}
 	if in.GetFollowed() == "" {
-		sublogger.Error().Msg("'followed' field can't be empty")
-		return nil, tools.GrpcError(codes.InvalidArgument)
+		return nil, tools.GrpcError(codes.InvalidArgument, "'followed' field can't be empty")
 	}
 	if in.GetFollower() == in.GetFollowed() {
-		sublogger.Error().Msg("user can't unfollow himself")
-		return nil, tools.GrpcError(codes.InvalidArgument)
+		return nil, tools.GrpcError(codes.InvalidArgument, "user can't unfollow himself")
 	}
 
 	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
@@ -358,7 +357,7 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 	tx, err := pool.BeginTx(psqlCtx, pgx.TxOptions{})
 	if err != nil {
 		sublogger.Error().Err(err).Send()
-		return nil, tools.GrpcError(codes.Internal)
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 	defer tx.Rollback(psqlCtx)
 
@@ -373,9 +372,9 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 	if err = tx.QueryRow(psqlCtx, strQuery, in.Followed, in.Follower).Scan(&timeline); err != nil {
 		sublogger.Error().Err(err).Str("$1", in.Followed).Str("$2", in.Follower).Msg(strQuery)
 		if err == pgx.ErrNoRows {
-			return nil, tools.GrpcError(codes.NotFound)
+			return nil, tools.GrpcError(codes.NotFound, fmt.Sprintf("user '%s' doesn't exist", in.Follower))
 		}
-		return nil, tools.GrpcError(codes.Internal)
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
 	strQuery = query("followers") + " returning tweets"
@@ -384,23 +383,29 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 	if err = tx.QueryRow(psqlCtx, strQuery, in.Follower, in.Followed).Scan(&tweets); err != nil {
 		sublogger.Error().Err(err).Str("$1", in.Follower).Str("$2", in.Followed).Msg(strQuery)
 		if err == pgx.ErrNoRows {
-			return nil, tools.GrpcError(codes.NotFound)
+			return nil, tools.GrpcError(codes.NotFound, fmt.Sprintf("user '%s' doesn't exist", in.Followed))
 		}
-		return nil, tools.GrpcError(codes.Internal)
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
 	newTimeline := tools.Difference(timeline, tweets)
+	// sort by tweets id, cause greater id means that tweet was created later
+	// id is stored in bigserial which is 2^63-1, so we don't have to worry about renewing it
+	sort.Slice(newTimeline, func(i, j int) bool {
+		return newTimeline[i] < newTimeline[j]
+	})
+
 	strQuery = fmt.Sprintf("update users set timeline = array[%s]::integer[] where username = $1",
 		tools.IntArrayToString(newTimeline))
 
 	if _, err = tx.Exec(psqlCtx, strQuery, in.Follower); err != nil {
 		sublogger.Error().Err(err).Str("$1", in.Follower).Msg(strQuery)
-		return nil, tools.GrpcError(codes.Internal)
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
 	if err = tx.Commit(psqlCtx); err != nil {
 		sublogger.Error().Err(err).Send()
-		return nil, tools.GrpcError(codes.Internal)
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
 	return &pb.Empty{}, nil
@@ -426,6 +431,7 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 	defer rdbCtxCancel()
 
 	key := fmt.Sprintf("%s:delete", msgProto.Username)
+	// FIXME
 	pipe := rdb.Pipeline()
 	hmgetRes := pipe.HMGet(rdbCtx, key, "followers", "following")
 	pipe.Del(rdbCtx, key)
@@ -436,8 +442,8 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 	}
 
 	vals := hmgetRes.Val()
-	followers := tools.InterfaceToStringArray(vals[0])
-	following := tools.InterfaceToStringArray(vals[1])
+	followers := strings.Split(vals[0].(string), ",")
+	following := strings.Split(vals[1].(string), ",")
 
 	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
 	defer psqlCtxCancel()
@@ -470,11 +476,11 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 		if err = rows.Scan(&username, &timeline); err != nil {
 			log.Error().Err(err).Send()
 		} else {
-			newTimeline := tools.Difference(timeline, msgProto.Tweets)[:]
+			newTimeline := tools.Difference(timeline, msgProto.Tweets)
 			// sort by tweets id, cause greater id means that tweet was created later
 			// id is stored in bigserial which is 2^63-1, so we don't have to worry about renewing it
 			sort.Slice(newTimeline, func(i, j int) bool {
-				return newTimeline[i] > newTimeline[j]
+				return newTimeline[i] < newTimeline[j]
 			})
 
 			queryBuilder.WriteString(fmt.Sprintf("('%s', array[%s]::integer[]),",
@@ -499,6 +505,13 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 
 	if _, err = tx.Exec(psqlCtx, strQuery, msgProto.Username); err != nil {
 		log.Error().Err(err).Msg(strQuery)
+		return
+	}
+
+	strQuery = "delete from users where username = $1"
+
+	if _, err := tx.Exec(psqlCtx, strQuery, msgProto.Username); err != nil {
+		log.Error().Err(err).Str("$1", msgProto.Username).Msg(strQuery)
 		return
 	}
 
@@ -636,7 +649,7 @@ func natsCallback(natsMsg *nats.Msg) {
 		handleDeleteUser(ctx, msg.Message)
 	case pb.NatsMessage_CreateTweet:
 		handleCreateTweet(ctx, msg.Message)
-	case pb.NatsMessage_DeleteTweet:
+	case pb.NatsMessage_DeleteTweets:
 		handleDeleteTweets(ctx, msg.Message)
 	}
 }
