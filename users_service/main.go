@@ -273,6 +273,29 @@ func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.E
 		return nil, tools.GrpcError(codes.InvalidArgument, "user can't follow himself")
 	}
 
+	followerKey := fmt.Sprintf("delete:%s", in.Follower)
+	followeeKey := fmt.Sprintf("delete:%s", in.Followed)
+
+	rdbCtx, rdbCtxCancel := context.WithTimeout(ctx, rdbCtxTimeout)
+	defer rdbCtxCancel()
+
+	pipe := rdb.Pipeline()
+	followerTxExists := pipe.Exists(rdbCtx, followerKey)
+	followeeTxExists := pipe.Exists(rdbCtx, followeeKey)
+
+	if _, err := pipe.Exec(rdbCtx); err != nil {
+		sublogger.Error().Err(err).Send()
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
+	}
+
+	if followerTxExists.Val() == 1 || followeeTxExists.Val() == 1 {
+		sublogger.Warn().
+			Str("follower", strconv.FormatInt(followerTxExists.Val(), 10)).
+			Str("followed", strconv.FormatInt(followeeTxExists.Val(), 10)).
+			Msg("delete tx in progress")
+		return nil, tools.GrpcError(codes.Canceled, "can't proceed, delete tx in progress")
+	}
+
 	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
 	defer psqlCtxCancel()
 
@@ -349,6 +372,29 @@ func (*UsersServerImpl) Unfollow(ctx context.Context, in *pb.FollowRequest) (*pb
 	}
 	if in.GetFollower() == in.GetFollowed() {
 		return nil, tools.GrpcError(codes.InvalidArgument, "user can't unfollow himself")
+	}
+
+	followerKey := fmt.Sprintf("delete:%s", in.Follower)
+	followeeKey := fmt.Sprintf("delete:%s", in.Followed)
+
+	rdbCtx, rdbCtxCancel := context.WithTimeout(ctx, rdbCtxTimeout)
+	defer rdbCtxCancel()
+
+	pipe := rdb.Pipeline()
+	followerTxExists := pipe.Exists(rdbCtx, followerKey)
+	followeeTxExists := pipe.Exists(rdbCtx, followeeKey)
+
+	if _, err := pipe.Exec(rdbCtx); err != nil {
+		sublogger.Error().Err(err).Send()
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
+	}
+
+	if followerTxExists.Val() == 1 || followeeTxExists.Val() == 1 {
+		sublogger.Warn().
+			Str("follower", strconv.FormatInt(followerTxExists.Val(), 10)).
+			Str("followed", strconv.FormatInt(followeeTxExists.Val(), 10)).
+			Msg("delete tx in progress")
+		return nil, tools.GrpcError(codes.Canceled, "can't proceed, delete tx in progress")
 	}
 
 	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
@@ -431,19 +477,19 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 	defer rdbCtxCancel()
 
 	key := fmt.Sprintf("%s:delete", msgProto.Username)
-	// FIXME
-	pipe := rdb.Pipeline()
-	hmgetRes := pipe.HMGet(rdbCtx, key, "followers", "following")
-	pipe.Del(rdbCtx, key)
-
-	if _, err := pipe.Exec(rdbCtx); err != nil {
+	hmgetRes, err := rdb.HMGet(rdbCtx, key, "followers", "following").Result()
+	if err != nil {
 		log.Error().Err(err).Send()
 		return
 	}
 
-	vals := hmgetRes.Val()
-	followers := strings.Split(vals[0].(string), ",")
-	following := strings.Split(vals[1].(string), ",")
+	if hmgetRes == nil {
+		log.Error().Msgf("transaction '%s' doesn't exist", key)
+		return
+	}
+
+	followers := strings.Split(hmgetRes[0].(string), ",")
+	following := strings.Split(hmgetRes[1].(string), ",")
 
 	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
 	defer psqlCtxCancel()
@@ -518,6 +564,10 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 	if err = tx.Commit(psqlCtx); err != nil {
 		log.Error().Err(err).Send()
 		return
+	}
+
+	if err := rdb.Del(rdbCtx, key).Err(); err != nil {
+		log.Error().Err(err).Send()
 	}
 }
 

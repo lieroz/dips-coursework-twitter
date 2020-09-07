@@ -183,7 +183,7 @@ func deleteTweets(ctx context.Context, logger *zerolog.Logger, tweets []int64, c
 
 	if err := nc.Publish("users", serializedMsg); err != nil {
 		logger.Error().Err(err).Str("nats command",
-			pb.NatsMessage_Command_name[int32(pb.NatsMessage_DeleteTweets)]).Send()
+			pb.NatsMessage_Command_name[int32(cmd)]).Send()
 		return err
 	}
 
@@ -197,7 +197,7 @@ func (*TweetsServerImpl) DeleteTweets(ctx context.Context, in *pb.DeleteTweetsRe
 		Logger()
 
 	if in.GetTweets() == nil {
-		return nil, tools.GrpcError(codes.InvalidArgument, "'id' field can't be omitted")
+		return nil, tools.GrpcError(codes.InvalidArgument, "'tweets' field can't be omitted")
 	}
 
 	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)

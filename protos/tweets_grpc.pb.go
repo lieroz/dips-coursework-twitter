@@ -20,8 +20,6 @@ type TweetsClient interface {
 	CreateTweet(ctx context.Context, in *CreateTweetRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetTweets(ctx context.Context, in *GetTweetsRequest, opts ...grpc.CallOption) (Tweets_GetTweetsClient, error)
 	DeleteTweets(ctx context.Context, in *DeleteTweetsRequest, opts ...grpc.CallOption) (*Empty, error)
-	// private methods
-	GetOrderedTimeline(ctx context.Context, opts ...grpc.CallOption) (Tweets_GetOrderedTimelineClient, error)
 }
 
 type tweetsClient struct {
@@ -82,37 +80,6 @@ func (c *tweetsClient) DeleteTweets(ctx context.Context, in *DeleteTweetsRequest
 	return out, nil
 }
 
-func (c *tweetsClient) GetOrderedTimeline(ctx context.Context, opts ...grpc.CallOption) (Tweets_GetOrderedTimelineClient, error) {
-	stream, err := c.cc.NewStream(ctx, &_Tweets_serviceDesc.Streams[1], "/Tweets/GetOrderedTimeline", opts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &tweetsGetOrderedTimelineClient{stream}
-	return x, nil
-}
-
-type Tweets_GetOrderedTimelineClient interface {
-	Send(*Timeline) error
-	Recv() (*Timeline, error)
-	grpc.ClientStream
-}
-
-type tweetsGetOrderedTimelineClient struct {
-	grpc.ClientStream
-}
-
-func (x *tweetsGetOrderedTimelineClient) Send(m *Timeline) error {
-	return x.ClientStream.SendMsg(m)
-}
-
-func (x *tweetsGetOrderedTimelineClient) Recv() (*Timeline, error) {
-	m := new(Timeline)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
 // TweetsServer is the server API for Tweets service.
 // All implementations must embed UnimplementedTweetsServer
 // for forward compatibility
@@ -120,8 +87,6 @@ type TweetsServer interface {
 	CreateTweet(context.Context, *CreateTweetRequest) (*Empty, error)
 	GetTweets(*GetTweetsRequest, Tweets_GetTweetsServer) error
 	DeleteTweets(context.Context, *DeleteTweetsRequest) (*Empty, error)
-	// private methods
-	GetOrderedTimeline(Tweets_GetOrderedTimelineServer) error
 	mustEmbedUnimplementedTweetsServer()
 }
 
@@ -137,9 +102,6 @@ func (*UnimplementedTweetsServer) GetTweets(*GetTweetsRequest, Tweets_GetTweetsS
 }
 func (*UnimplementedTweetsServer) DeleteTweets(context.Context, *DeleteTweetsRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteTweets not implemented")
-}
-func (*UnimplementedTweetsServer) GetOrderedTimeline(Tweets_GetOrderedTimelineServer) error {
-	return status.Errorf(codes.Unimplemented, "method GetOrderedTimeline not implemented")
 }
 func (*UnimplementedTweetsServer) mustEmbedUnimplementedTweetsServer() {}
 
@@ -204,32 +166,6 @@ func _Tweets_DeleteTweets_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Tweets_GetOrderedTimeline_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(TweetsServer).GetOrderedTimeline(&tweetsGetOrderedTimelineServer{stream})
-}
-
-type Tweets_GetOrderedTimelineServer interface {
-	Send(*Timeline) error
-	Recv() (*Timeline, error)
-	grpc.ServerStream
-}
-
-type tweetsGetOrderedTimelineServer struct {
-	grpc.ServerStream
-}
-
-func (x *tweetsGetOrderedTimelineServer) Send(m *Timeline) error {
-	return x.ServerStream.SendMsg(m)
-}
-
-func (x *tweetsGetOrderedTimelineServer) Recv() (*Timeline, error) {
-	m := new(Timeline)
-	if err := x.ServerStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
 var _Tweets_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "Tweets",
 	HandlerType: (*TweetsServer)(nil),
@@ -248,12 +184,6 @@ var _Tweets_serviceDesc = grpc.ServiceDesc{
 			StreamName:    "GetTweets",
 			Handler:       _Tweets_GetTweets_Handler,
 			ServerStreams: true,
-		},
-		{
-			StreamName:    "GetOrderedTimeline",
-			Handler:       _Tweets_GetOrderedTimeline_Handler,
-			ServerStreams: true,
-			ClientStreams: true,
 		},
 	},
 	Metadata: "tweets.proto",
