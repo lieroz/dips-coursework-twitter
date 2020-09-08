@@ -10,8 +10,11 @@ message NatsDeleteUserMessage {
 }
 
 message NatsCreateTweetMessage {
-  string username = 1;
-  int64 tweet_id = 2;
+  int64 tweet_id = 1;
+  int64 parent_tweet_id = 2;
+  string creator = 3;
+  string content = 4;
+
 }
 
 message NatsDeleteTweetsMessage {

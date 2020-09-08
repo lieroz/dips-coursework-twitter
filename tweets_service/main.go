@@ -52,18 +52,13 @@ func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequ
 		return nil, tools.GrpcError(codes.InvalidArgument, "'content' field can't be empty")
 	}
 
-	query := "insert into tweets (parent_id, creator, content) select $1, $2, $3 returning id"
+	query := "select nextval('tweet_id_seq')"
 	var id int64
 
 	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
 	defer psqlCtxCancel()
 
-	if err := pool.QueryRow(psqlCtx,
-		query,
-		in.ParentId,
-		in.Creator,
-		in.Content,
-	).Scan(&id); err != nil {
+	if err := pool.QueryRow(psqlCtx, query).Scan(&id); err != nil {
 		sublogger.Error().Err(err).
 			Str("$1", strconv.FormatInt(in.ParentId, 10)).
 			Str("$2", in.Creator).
@@ -72,7 +67,7 @@ func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequ
 		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
-	cmdProto := &pb.NatsCreateTweetMessage{Username: in.Creator, TweetId: id}
+	cmdProto := &pb.NatsCreateTweetMessage{TweetId: id, ParentTweetId: in.ParentId, Creator: in.Creator, Content: in.Content}
 	serializedCmd, err := proto.Marshal(cmdProto)
 	if err != nil {
 		sublogger.Error().Err(err).Str("protobuf message", "NatsCreateTweetMessage").Send()
@@ -237,6 +232,47 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 	deleteTweets(psqlCtx, &log.Logger, msgProto.Tweets, pb.NatsMessage_DeleteUser, serializedMsg)
 }
 
+func handleCreateTweet(ctx context.Context, serializedMsg []byte) {
+	msgProto := &pb.NatsCreateTweetMessage{}
+	if err := proto.Unmarshal(serializedMsg, msgProto); err != nil {
+		log.Error().Err(err).Send()
+		return
+	}
+
+	if msgProto.GetTweetId() == 0 {
+		log.Error().Msg("'tweet_id' field can't be omitted")
+		return
+	}
+	if msgProto.GetCreator() == "" {
+		log.Error().Msg("'creator' field can't be empty")
+		return
+	}
+	if msgProto.GetContent() == "" {
+		log.Error().Msg("'content' field can't be empty")
+		return
+	}
+
+	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
+	defer psqlCtxCancel()
+
+	query := "insert into tweets (id, parent_id, creator, content) values ($1, $2, $3, $4)"
+	if _, err := pool.Exec(psqlCtx,
+		query,
+		msgProto.TweetId,
+		msgProto.GetParentTweetId(),
+		msgProto.Creator,
+		msgProto.Content,
+	); err != nil {
+		log.Error().Err(err).
+			Str("$1", strconv.FormatInt(msgProto.TweetId, 10)).
+			Str("$2", strconv.FormatInt(msgProto.GetParentTweetId(), 10)).
+			Str("$3", msgProto.Creator).
+			Str("$4", msgProto.Content).
+			Msg(query)
+		return
+	}
+}
+
 func natsCallback(natsMsg *nats.Msg) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -247,6 +283,8 @@ func natsCallback(natsMsg *nats.Msg) {
 	switch msg.Command {
 	case pb.NatsMessage_DeleteUser:
 		handleDeleteUser(ctx, msg.Message)
+	case pb.NatsMessage_CreateTweet:
+		handleCreateTweet(ctx, msg.Message)
 	}
 }
 

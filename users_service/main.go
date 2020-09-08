@@ -598,7 +598,7 @@ func handleCreateTweet(ctx context.Context, serializedMsg []byte) {
 		return
 	}
 
-	if msgProto.GetUsername() == "" {
+	if msgProto.GetCreator() == "" {
 		log.Error().Msg("'username' field can't be empty")
 		return
 	}
@@ -620,10 +620,10 @@ func handleCreateTweet(ctx context.Context, serializedMsg []byte) {
 	var followers []string
 	query := "update users set tweets = array_append(tweets, $1) where username = $2 returning followers"
 
-	if err = tx.QueryRow(psqlCtx, query, msgProto.TweetId, msgProto.Username).Scan(&followers); err != nil {
+	if err = tx.QueryRow(psqlCtx, query, msgProto.TweetId, msgProto.Creator).Scan(&followers); err != nil {
 		log.Error().Err(err).
 			Str("$1", strconv.FormatInt(msgProto.TweetId, 10)).
-			Str("$2", msgProto.Username).
+			Str("$2", msgProto.Creator).
 			Msg(query)
 		return
 	}
@@ -640,6 +640,19 @@ func handleCreateTweet(ctx context.Context, serializedMsg []byte) {
 
 	if err = tx.Commit(psqlCtx); err != nil {
 		log.Error().Err(err).Send()
+		return
+	}
+
+	ncMsg := &pb.NatsMessage{Command: pb.NatsMessage_CreateTweet, Message: serializedMsg}
+	msg, err := proto.Marshal(ncMsg)
+	if err != nil {
+		log.Error().Err(err).Str("protobuf message", "NatsMessage").Send()
+		return
+	}
+
+	if err := nc.Publish("tweets", msg); err != nil {
+		log.Error().Err(err).Str("nats command",
+			pb.NatsMessage_Command_name[int32(pb.NatsMessage_CreateTweet)]).Send()
 		return
 	}
 }

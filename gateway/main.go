@@ -29,10 +29,9 @@ const (
 
 /*
  TODO:
- 1. check user exists
- 2. add oauth
- 3. add grpc auth
- 4. add nats auth
+ 1. add oauth
+ 2. add grpc auth
+ 3. add nats auth
 */
 
 func SignUp(w http.ResponseWriter, r *http.Request) {
