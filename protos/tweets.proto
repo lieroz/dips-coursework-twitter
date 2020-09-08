@@ -29,11 +29,6 @@ message GetTweetsReply {
   }
 }
 
-message EditTweetRequest {
-  int64 id = 1;
-  string content = 2;
-}
-
 message DeleteTweetsRequest {
   enum Context {
     Client = 0;

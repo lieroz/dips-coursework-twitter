@@ -58,6 +58,14 @@ message GetUsersReply {
   }
 }
 
+message GetTimelineRequest {
+  string username = 1;
+}
+
+message GetTimelineResponse {
+  repeated int64 timeline = 1;
+}
+
 message FollowRequest {
   string follower = 1;
   string followed = 2;
@@ -69,6 +77,7 @@ service Users {
   rpc GetUserInfoSummary(GetSummaryRequest) returns (GetSummaryReply);
 
   rpc GetUsers(GetUsersRequest) returns (stream GetUsersReply);
+  rpc GetTimeline(GetTimelineRequest) returns (GetTimelineResponse);
 
   rpc Follow(FollowRequest) returns (Empty);
   rpc Unfollow(FollowRequest) returns (Empty);

@@ -242,10 +242,11 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 		} else {
 			user.RegistrationTimestamp = timestamp.Unix()
 			reply.Reply = &pb.GetUsersReply_User{User: &user}
-			if err = stream.Send(&reply); err != nil {
-				log.Error().Err(err).Send()
-				return tools.GrpcError(codes.Internal, "INTERNAL ERROR")
-			}
+		}
+
+		if err = stream.Send(&reply); err != nil {
+			log.Error().Err(err).Send()
+			return tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 		}
 	}
 
@@ -255,6 +256,25 @@ func (*UsersServerImpl) GetUsers(in *pb.GetUsersRequest, stream pb.Users_GetUser
 	}
 
 	return nil
+}
+
+func (*UsersServerImpl) GetTimeline(ctx context.Context, in *pb.GetTimelineRequest) (*pb.GetTimelineResponse, error) {
+	if in.GetUsername() == "" {
+		return nil, tools.GrpcError(codes.InvalidArgument, "'username' field can't be empty")
+	}
+
+	psqlCtx, psqlCtxCancel := context.WithTimeout(context.Background(), psqlCtxTimeout)
+	defer psqlCtxCancel()
+
+	var timeline []int64
+	query := "select timeline from users where username = $1"
+
+	if err := pool.QueryRow(psqlCtx, query, in.Username).Scan(&timeline); err != nil {
+		log.Error().Err(err).Str("$1", in.Username).Msg(query)
+		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
+	}
+
+	return &pb.GetTimelineResponse{Timeline: timeline}, nil
 }
 
 func (*UsersServerImpl) Follow(ctx context.Context, in *pb.FollowRequest) (*pb.Empty, error) {

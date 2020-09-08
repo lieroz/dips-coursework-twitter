@@ -103,8 +103,13 @@ func (*TweetsServerImpl) GetTweets(in *pb.GetTweetsRequest, stream pb.Tweets_Get
 	psqlCtx, psqlCtxCancel := context.WithTimeout(context.Background(), psqlCtxTimeout)
 	defer psqlCtxCancel()
 
-	query := fmt.Sprintf("select * from tweets where id in (%s)", tools.IntArrayToString(in.Tweets))
-	rows, err := pool.Query(psqlCtx, query)
+	query := `with recursive tweets_and_retweets as (
+		select * from tweets where id in (%s) 
+		union
+		select r.* from tweets r join tweets_and_retweets tar on r.id = tar.parent_id
+	) select * from tweets_and_retweets`
+
+	rows, err := pool.Query(psqlCtx, fmt.Sprintf(query, tools.IntArrayToString(in.Tweets)))
 	if err != nil {
 		log.Error().Err(err).Msg(query)
 		return tools.GrpcError(codes.Internal, "INTERNAL ERROR")
@@ -126,10 +131,11 @@ func (*TweetsServerImpl) GetTweets(in *pb.GetTweetsRequest, stream pb.Tweets_Get
 		} else {
 			tweet.CreationTimestamp = timestamp.Unix()
 			reply.Reply = &pb.GetTweetsReply_Tweet{Tweet: &tweet}
-			if err = stream.Send(&reply); err != nil {
-				log.Error().Err(err).Send()
-				return tools.GrpcError(codes.Internal, "INTERNAL ERROR")
-			}
+		}
+
+		if err = stream.Send(&reply); err != nil {
+			log.Error().Err(err).Send()
+			return tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 		}
 	}
 
@@ -141,36 +147,14 @@ func (*TweetsServerImpl) GetTweets(in *pb.GetTweetsRequest, stream pb.Tweets_Get
 	return nil
 }
 
-func (*TweetsServerImpl) EditTweet(ctx context.Context, in *pb.EditTweetRequest) (*pb.Empty, error) {
-	p, _ := peer.FromContext(ctx)
-	sublogger := log.With().
-		Str("client ip", p.Addr.String()).
-		Logger()
-
-	if in.GetId() == 0 {
-		return nil, tools.GrpcError(codes.InvalidArgument, "'id' field can't be omitted")
-	}
-	if in.GetContent() == "" {
-		return nil, tools.GrpcError(codes.InvalidArgument, "'content' field can't be empty")
-	}
-	psqlCtx, psqlCtxCancel := context.WithTimeout(context.Background(), psqlCtxTimeout)
-	defer psqlCtxCancel()
-
-	query := "update tweets set content = $1 where id = $2"
-	if _, err := pool.Exec(psqlCtx, query, in.Content, in.Id); err != nil {
-		sublogger.Error().Err(err).
-			Str("$1", in.Content).
-			Str("$2", strconv.FormatInt(in.Id, 10)).
-			Msg(query)
-		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
-	}
-
-	return &pb.Empty{}, nil
-}
-
 func deleteTweets(ctx context.Context, logger *zerolog.Logger, tweets []int64, cmd pb.NatsMessage_Command, msg []byte) error {
-	query := fmt.Sprintf("delete from tweets where id in (%s)", tools.IntArrayToString(tweets))
-	if _, err := pool.Exec(ctx, query); err != nil {
+	query := `with recursive tweets_and_retweets as (
+		select id from tweets where id in (%s)
+		union 
+		select r.id from tweets r join tweets_and_retweets tar on r.parent_id = tar.id
+	) delete from tweets where id in (select * from tweets_and_retweets);`
+
+	if _, err := pool.Exec(ctx, fmt.Sprintf(query, tools.IntArrayToString(tweets))); err != nil {
 		logger.Error().Err(err).Msg(query)
 		return err
 	}

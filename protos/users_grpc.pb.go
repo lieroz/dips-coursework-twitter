@@ -21,11 +21,9 @@ type UsersClient interface {
 	DeleteUser(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetUserInfoSummary(ctx context.Context, in *GetSummaryRequest, opts ...grpc.CallOption) (*GetSummaryReply, error)
 	GetUsers(ctx context.Context, in *GetUsersRequest, opts ...grpc.CallOption) (Users_GetUsersClient, error)
+	GetTimeline(ctx context.Context, in *GetTimelineRequest, opts ...grpc.CallOption) (*GetTimelineResponse, error)
 	Follow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*Empty, error)
 	Unfollow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*Empty, error)
-	// private methods
-	OnTweetCreated(ctx context.Context, in *OnTweetCreatedRequest, opts ...grpc.CallOption) (*Empty, error)
-	OnTweetsDeleted(ctx context.Context, in *OnTweetsDeletedRequest, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type usersClient struct {
@@ -95,6 +93,15 @@ func (x *usersGetUsersClient) Recv() (*GetUsersReply, error) {
 	return m, nil
 }
 
+func (c *usersClient) GetTimeline(ctx context.Context, in *GetTimelineRequest, opts ...grpc.CallOption) (*GetTimelineResponse, error) {
+	out := new(GetTimelineResponse)
+	err := c.cc.Invoke(ctx, "/Users/GetTimeline", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *usersClient) Follow(ctx context.Context, in *FollowRequest, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
 	err := c.cc.Invoke(ctx, "/Users/Follow", in, out, opts...)
@@ -113,24 +120,6 @@ func (c *usersClient) Unfollow(ctx context.Context, in *FollowRequest, opts ...g
 	return out, nil
 }
 
-func (c *usersClient) OnTweetCreated(ctx context.Context, in *OnTweetCreatedRequest, opts ...grpc.CallOption) (*Empty, error) {
-	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/Users/OnTweetCreated", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *usersClient) OnTweetsDeleted(ctx context.Context, in *OnTweetsDeletedRequest, opts ...grpc.CallOption) (*Empty, error) {
-	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/Users/OnTweetsDeleted", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // UsersServer is the server API for Users service.
 // All implementations must embed UnimplementedUsersServer
 // for forward compatibility
@@ -139,11 +128,9 @@ type UsersServer interface {
 	DeleteUser(context.Context, *DeleteRequest) (*Empty, error)
 	GetUserInfoSummary(context.Context, *GetSummaryRequest) (*GetSummaryReply, error)
 	GetUsers(*GetUsersRequest, Users_GetUsersServer) error
+	GetTimeline(context.Context, *GetTimelineRequest) (*GetTimelineResponse, error)
 	Follow(context.Context, *FollowRequest) (*Empty, error)
 	Unfollow(context.Context, *FollowRequest) (*Empty, error)
-	// private methods
-	OnTweetCreated(context.Context, *OnTweetCreatedRequest) (*Empty, error)
-	OnTweetsDeleted(context.Context, *OnTweetsDeletedRequest) (*Empty, error)
 	mustEmbedUnimplementedUsersServer()
 }
 
@@ -163,17 +150,14 @@ func (*UnimplementedUsersServer) GetUserInfoSummary(context.Context, *GetSummary
 func (*UnimplementedUsersServer) GetUsers(*GetUsersRequest, Users_GetUsersServer) error {
 	return status.Errorf(codes.Unimplemented, "method GetUsers not implemented")
 }
+func (*UnimplementedUsersServer) GetTimeline(context.Context, *GetTimelineRequest) (*GetTimelineResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTimeline not implemented")
+}
 func (*UnimplementedUsersServer) Follow(context.Context, *FollowRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Follow not implemented")
 }
 func (*UnimplementedUsersServer) Unfollow(context.Context, *FollowRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Unfollow not implemented")
-}
-func (*UnimplementedUsersServer) OnTweetCreated(context.Context, *OnTweetCreatedRequest) (*Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method OnTweetCreated not implemented")
-}
-func (*UnimplementedUsersServer) OnTweetsDeleted(context.Context, *OnTweetsDeletedRequest) (*Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method OnTweetsDeleted not implemented")
 }
 func (*UnimplementedUsersServer) mustEmbedUnimplementedUsersServer() {}
 
@@ -256,6 +240,24 @@ func (x *usersGetUsersServer) Send(m *GetUsersReply) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Users_GetTimeline_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTimelineRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UsersServer).GetTimeline(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/Users/GetTimeline",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UsersServer).GetTimeline(ctx, req.(*GetTimelineRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Users_Follow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(FollowRequest)
 	if err := dec(in); err != nil {
@@ -292,42 +294,6 @@ func _Users_Unfollow_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Users_OnTweetCreated_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(OnTweetCreatedRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(UsersServer).OnTweetCreated(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/Users/OnTweetCreated",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(UsersServer).OnTweetCreated(ctx, req.(*OnTweetCreatedRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Users_OnTweetsDeleted_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(OnTweetsDeletedRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(UsersServer).OnTweetsDeleted(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/Users/OnTweetsDeleted",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(UsersServer).OnTweetsDeleted(ctx, req.(*OnTweetsDeletedRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 var _Users_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "Users",
 	HandlerType: (*UsersServer)(nil),
@@ -345,20 +311,16 @@ var _Users_serviceDesc = grpc.ServiceDesc{
 			Handler:    _Users_GetUserInfoSummary_Handler,
 		},
 		{
+			MethodName: "GetTimeline",
+			Handler:    _Users_GetTimeline_Handler,
+		},
+		{
 			MethodName: "Follow",
 			Handler:    _Users_Follow_Handler,
 		},
 		{
 			MethodName: "Unfollow",
 			Handler:    _Users_Unfollow_Handler,
-		},
-		{
-			MethodName: "OnTweetCreated",
-			Handler:    _Users_OnTweetCreated_Handler,
-		},
-		{
-			MethodName: "OnTweetsDeleted",
-			Handler:    _Users_OnTweetsDeleted_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
