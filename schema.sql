@@ -11,7 +11,7 @@ create table if not exists users (
 );
 
 create table if not exists tweets (
-    id serial primary key,
+    id bigserial primary key,
     parent_id integer default 0,
     creator varchar(20) not null,
     content varchar(280) not null,

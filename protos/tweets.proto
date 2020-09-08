@@ -29,11 +29,6 @@ message GetTweetsReply {
   }
 }
 
-message EditTweetRequest {
-  int64 id = 1;
-  string content = 2;
-}
-
 message DeleteTweetsRequest {
   enum Context {
     Client = 0;
@@ -41,19 +36,11 @@ message DeleteTweetsRequest {
   }
 
   Context context = 1;
-  repeated int64 id = 2;
-}
-
-message Timeline {
-  repeated int64 timeline = 1;
+  repeated int64 tweets = 2;
 }
 
 service Tweets {
   rpc CreateTweet(CreateTweetRequest) returns (Empty);
   rpc GetTweets(GetTweetsRequest) returns (stream GetTweetsReply);
-  rpc EditTweet(EditTweetRequest) returns (Empty);
   rpc DeleteTweets(DeleteTweetsRequest) returns (Empty);
-
-  // private methods
-  rpc GetOrderedTimeline(stream Timeline) returns (stream Timeline);
 }
