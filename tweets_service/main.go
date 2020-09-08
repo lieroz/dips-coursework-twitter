@@ -301,8 +301,8 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to connect to postgresql server")
 	}
 
-	//TODO: add connect timeout + ping/pong
-	if nc, err = nats.Connect(nats.DefaultURL); err != nil {
+	if nc, err = nats.Connect(nats.DefaultURL,
+		nats.UserInfo("user", "password")); err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to nats server")
 	}
 	nc.QueueSubscribe("tweets", "users_queue", natsCallback)

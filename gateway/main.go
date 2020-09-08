@@ -31,7 +31,6 @@ const (
  TODO:
  1. add oauth
  2. add grpc auth
- 3. add nats auth
 */
 
 func SignUp(w http.ResponseWriter, r *http.Request) {
