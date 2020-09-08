@@ -10,8 +10,10 @@ create table if not exists users (
     timeline integer[] default array[]::integer[]
 );
 
+create sequence if not exists tweet_id_seq;
+
 create table if not exists tweets (
-    id bigserial primary key,
+    id bigint default nextval('tweet_id_seq'),
     parent_id integer default 0,
     creator varchar(20) not null,
     content varchar(280) not null,

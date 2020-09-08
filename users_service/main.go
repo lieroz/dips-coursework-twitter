@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
@@ -20,6 +21,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/examples/data"
 	"google.golang.org/grpc/peer"
 
 	pb "github.com/lieroz/dips-coursework-twitter/protos"
@@ -598,7 +601,7 @@ func handleCreateTweet(ctx context.Context, serializedMsg []byte) {
 		return
 	}
 
-	if msgProto.GetUsername() == "" {
+	if msgProto.GetCreator() == "" {
 		log.Error().Msg("'username' field can't be empty")
 		return
 	}
@@ -620,10 +623,10 @@ func handleCreateTweet(ctx context.Context, serializedMsg []byte) {
 	var followers []string
 	query := "update users set tweets = array_append(tweets, $1) where username = $2 returning followers"
 
-	if err = tx.QueryRow(psqlCtx, query, msgProto.TweetId, msgProto.Username).Scan(&followers); err != nil {
+	if err = tx.QueryRow(psqlCtx, query, msgProto.TweetId, msgProto.Creator).Scan(&followers); err != nil {
 		log.Error().Err(err).
 			Str("$1", strconv.FormatInt(msgProto.TweetId, 10)).
-			Str("$2", msgProto.Username).
+			Str("$2", msgProto.Creator).
 			Msg(query)
 		return
 	}
@@ -640,6 +643,19 @@ func handleCreateTweet(ctx context.Context, serializedMsg []byte) {
 
 	if err = tx.Commit(psqlCtx); err != nil {
 		log.Error().Err(err).Send()
+		return
+	}
+
+	ncMsg := &pb.NatsMessage{Command: pb.NatsMessage_CreateTweet, Message: serializedMsg}
+	msg, err := proto.Marshal(ncMsg)
+	if err != nil {
+		log.Error().Err(err).Str("protobuf message", "NatsMessage").Send()
+		return
+	}
+
+	if err := nc.Publish("tweets", msg); err != nil {
+		log.Error().Err(err).Str("nats command",
+			pb.NatsMessage_Command_name[int32(pb.NatsMessage_CreateTweet)]).Send()
 		return
 	}
 }
@@ -737,8 +753,8 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to connect to postgresql server")
 	}
 
-	//TODO: add connect timeout + ping/pong
-	if nc, err = nats.Connect(nats.DefaultURL); err != nil {
+	if nc, err = nats.Connect(nats.DefaultURL,
+		nats.UserInfo("user", "password")); err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to nats server")
 	}
 	nc.QueueSubscribe("users", "tweets_queue", natsCallback)
@@ -750,14 +766,24 @@ func main() {
 		PoolSize: 2,
 	})
 
+	cert, err := tls.LoadX509KeyPair(data.Path("x509/server_cert.pem"), data.Path("x509/server_key.pem"))
+	if err != nil {
+		log.Fatal().Msgf("failed to load key pair: %s", err)
+	}
+	opts := []grpc.ServerOption{
+		grpc.UnaryInterceptor(tools.EnsureValidToken),
+		grpc.Creds(credentials.NewServerTLSFromCert(&cert)),
+	}
+
+	s := grpc.NewServer(opts...)
+	pb.RegisterUsersServer(s, &UsersServerImpl{})
+
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to listen")
 	}
-	log.Info().Msgf("Start listening on: %s", port)
 
-	s := grpc.NewServer()
-	pb.RegisterUsersServer(s, &UsersServerImpl{})
+	log.Info().Msgf("Start listening on: %s", port)
 	if err := s.Serve(lis); err != nil {
 		log.Fatal().Err(err).Msg("Failed to serve grpc service")
 	}

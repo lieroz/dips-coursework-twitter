@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
@@ -16,6 +17,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/examples/data"
 	"google.golang.org/grpc/peer"
 
 	pb "github.com/lieroz/dips-coursework-twitter/protos"
@@ -52,18 +55,13 @@ func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequ
 		return nil, tools.GrpcError(codes.InvalidArgument, "'content' field can't be empty")
 	}
 
-	query := "insert into tweets (parent_id, creator, content) select $1, $2, $3 returning id"
+	query := "select nextval('tweet_id_seq')"
 	var id int64
 
 	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
 	defer psqlCtxCancel()
 
-	if err := pool.QueryRow(psqlCtx,
-		query,
-		in.ParentId,
-		in.Creator,
-		in.Content,
-	).Scan(&id); err != nil {
+	if err := pool.QueryRow(psqlCtx, query).Scan(&id); err != nil {
 		sublogger.Error().Err(err).
 			Str("$1", strconv.FormatInt(in.ParentId, 10)).
 			Str("$2", in.Creator).
@@ -72,7 +70,7 @@ func (*TweetsServerImpl) CreateTweet(ctx context.Context, in *pb.CreateTweetRequ
 		return nil, tools.GrpcError(codes.Internal, "INTERNAL ERROR")
 	}
 
-	cmdProto := &pb.NatsCreateTweetMessage{Username: in.Creator, TweetId: id}
+	cmdProto := &pb.NatsCreateTweetMessage{TweetId: id, ParentTweetId: in.ParentId, Creator: in.Creator, Content: in.Content}
 	serializedCmd, err := proto.Marshal(cmdProto)
 	if err != nil {
 		sublogger.Error().Err(err).Str("protobuf message", "NatsCreateTweetMessage").Send()
@@ -237,6 +235,47 @@ func handleDeleteUser(ctx context.Context, serializedMsg []byte) {
 	deleteTweets(psqlCtx, &log.Logger, msgProto.Tweets, pb.NatsMessage_DeleteUser, serializedMsg)
 }
 
+func handleCreateTweet(ctx context.Context, serializedMsg []byte) {
+	msgProto := &pb.NatsCreateTweetMessage{}
+	if err := proto.Unmarshal(serializedMsg, msgProto); err != nil {
+		log.Error().Err(err).Send()
+		return
+	}
+
+	if msgProto.GetTweetId() == 0 {
+		log.Error().Msg("'tweet_id' field can't be omitted")
+		return
+	}
+	if msgProto.GetCreator() == "" {
+		log.Error().Msg("'creator' field can't be empty")
+		return
+	}
+	if msgProto.GetContent() == "" {
+		log.Error().Msg("'content' field can't be empty")
+		return
+	}
+
+	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
+	defer psqlCtxCancel()
+
+	query := "insert into tweets (id, parent_id, creator, content) values ($1, $2, $3, $4)"
+	if _, err := pool.Exec(psqlCtx,
+		query,
+		msgProto.TweetId,
+		msgProto.GetParentTweetId(),
+		msgProto.Creator,
+		msgProto.Content,
+	); err != nil {
+		log.Error().Err(err).
+			Str("$1", strconv.FormatInt(msgProto.TweetId, 10)).
+			Str("$2", strconv.FormatInt(msgProto.GetParentTweetId(), 10)).
+			Str("$3", msgProto.Creator).
+			Str("$4", msgProto.Content).
+			Msg(query)
+		return
+	}
+}
+
 func natsCallback(natsMsg *nats.Msg) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -247,6 +286,8 @@ func natsCallback(natsMsg *nats.Msg) {
 	switch msg.Command {
 	case pb.NatsMessage_DeleteUser:
 		handleDeleteUser(ctx, msg.Message)
+	case pb.NatsMessage_CreateTweet:
+		handleCreateTweet(ctx, msg.Message)
 	}
 }
 
@@ -263,8 +304,8 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to connect to postgresql server")
 	}
 
-	//TODO: add connect timeout + ping/pong
-	if nc, err = nats.Connect(nats.DefaultURL); err != nil {
+	if nc, err = nats.Connect(nats.DefaultURL,
+		nats.UserInfo("user", "password")); err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to nats server")
 	}
 	nc.QueueSubscribe("tweets", "users_queue", natsCallback)
@@ -276,14 +317,24 @@ func main() {
 		PoolSize: 2,
 	})
 
+	cert, err := tls.LoadX509KeyPair(data.Path("x509/server_cert.pem"), data.Path("x509/server_key.pem"))
+	if err != nil {
+		log.Fatal().Msgf("failed to load key pair: %s", err)
+	}
+	opts := []grpc.ServerOption{
+		grpc.UnaryInterceptor(tools.EnsureValidToken),
+		grpc.Creds(credentials.NewServerTLSFromCert(&cert)),
+	}
+
+	s := grpc.NewServer(opts...)
+	pb.RegisterTweetsServer(s, &TweetsServerImpl{})
+
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to listen")
 	}
-	log.Info().Msgf("Start listening on: %s", port)
 
-	s := grpc.NewServer()
-	pb.RegisterTweetsServer(s, &TweetsServerImpl{})
+	log.Info().Msgf("Start listening on: %s", port)
 	if err := s.Serve(lis); err != nil {
 		log.Fatal().Err(err).Msg("Failed to serve grpc service")
 	}

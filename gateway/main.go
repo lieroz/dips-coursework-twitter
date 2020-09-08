@@ -11,8 +11,12 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/oauth"
+	"google.golang.org/grpc/examples/data"
 	status "google.golang.org/grpc/status"
 
 	pb "github.com/lieroz/dips-coursework-twitter/protos"
@@ -29,10 +33,7 @@ const (
 
 /*
  TODO:
- 1. check user exists
- 2. add oauth
- 3. add grpc auth
- 4. add nats auth
+ 1. add oauth
 */
 
 func SignUp(w http.ResponseWriter, r *http.Request) {
@@ -456,14 +457,26 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	log.Logger = log.With().Caller().Logger()
 
-	if conn, err := grpc.Dial("localhost:8001", grpc.WithInsecure()); err != nil {
+	perRPC := oauth.NewOauthAccess(fetchToken())
+	creds, err := credentials.NewClientTLSFromFile(data.Path("x509/ca_cert.pem"), "x.test.example.com")
+	if err != nil {
+		log.Fatal().Err(err).Send()
+	}
+	opts := []grpc.DialOption{
+		grpc.WithPerRPCCredentials(perRPC),
+		grpc.WithTransportCredentials(creds),
+	}
+
+	opts = append(opts, grpc.WithBlock())
+
+	if conn, err := grpc.Dial("localhost:8001", opts...); err != nil {
 		log.Fatal().Err(err).Send()
 	} else {
 		defer conn.Close()
 		usersClient = pb.NewUsersClient(conn)
 	}
 
-	if conn, err := grpc.Dial("localhost:8002", grpc.WithInsecure()); err != nil {
+	if conn, err := grpc.Dial("localhost:8002", opts...); err != nil {
 		log.Fatal().Err(err).Send()
 	} else {
 		defer conn.Close()
@@ -488,5 +501,11 @@ func main() {
 	log.Info().Msg("Start listen")
 	if err := http.ListenAndServe("localhost:8080", r); err != nil {
 		log.Fatal().Err(err).Send()
+	}
+}
+
+func fetchToken() *oauth2.Token {
+	return &oauth2.Token{
+		AccessToken: "some-secret-token",
 	}
 }

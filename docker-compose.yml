@@ -19,6 +19,7 @@ services:
 
   nats:
     image: 'nats:alpine'
+    command: "--user user --pass password"
     ports:
       - "8222:8222"
       - "4222:4222"
