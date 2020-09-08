@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
@@ -16,6 +17,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/examples/data"
 	"google.golang.org/grpc/peer"
 
 	pb "github.com/lieroz/dips-coursework-twitter/protos"
@@ -314,14 +317,24 @@ func main() {
 		PoolSize: 2,
 	})
 
+	cert, err := tls.LoadX509KeyPair(data.Path("x509/server_cert.pem"), data.Path("x509/server_key.pem"))
+	if err != nil {
+		log.Fatal().Msgf("failed to load key pair: %s", err)
+	}
+	opts := []grpc.ServerOption{
+		grpc.UnaryInterceptor(tools.EnsureValidToken),
+		grpc.Creds(credentials.NewServerTLSFromCert(&cert)),
+	}
+
+	s := grpc.NewServer(opts...)
+	pb.RegisterTweetsServer(s, &TweetsServerImpl{})
+
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to listen")
 	}
-	log.Info().Msgf("Start listening on: %s", port)
 
-	s := grpc.NewServer()
-	pb.RegisterTweetsServer(s, &TweetsServerImpl{})
+	log.Info().Msgf("Start listening on: %s", port)
 	if err := s.Serve(lis); err != nil {
 		log.Fatal().Err(err).Msg("Failed to serve grpc service")
 	}
