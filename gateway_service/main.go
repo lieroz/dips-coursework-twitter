@@ -499,7 +499,7 @@ func main() {
 	r.HandleFunc("/tweets/delete", DeleteTweets).Methods("DELETE")
 
 	log.Info().Msg("Start listen")
-	if err := http.ListenAndServe("localhost:8080", r); err != nil {
+	if err := http.ListenAndServe("0.0.0.0:8080", r); err != nil {
 		log.Fatal().Err(err).Send()
 	}
 }
