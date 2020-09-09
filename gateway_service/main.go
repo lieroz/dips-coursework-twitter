@@ -469,14 +469,14 @@ func main() {
 
 	opts = append(opts, grpc.WithBlock())
 
-	if conn, err := grpc.Dial("localhost:8001", opts...); err != nil {
+	if conn, err := grpc.Dial("users:8001", opts...); err != nil {
 		log.Fatal().Err(err).Send()
 	} else {
 		defer conn.Close()
 		usersClient = pb.NewUsersClient(conn)
 	}
 
-	if conn, err := grpc.Dial("localhost:8002", opts...); err != nil {
+	if conn, err := grpc.Dial("tweets:8002", opts...); err != nil {
 		log.Fatal().Err(err).Send()
 	} else {
 		defer conn.Close()

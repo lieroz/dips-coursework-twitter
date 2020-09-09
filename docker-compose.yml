@@ -34,5 +34,25 @@ services:
       - redis
       - nats
 
+  tweets:
+    build:
+      context: .
+      dockerfile: Dockerfile.tweets
+    depends_on:
+      - postgres
+      - redis
+      - nats
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    depends_on:
+      - postgres
+      - redis
+      - nats
+      - users
+      - tweets
+
 volumes:
   persistent-data:

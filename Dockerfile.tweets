@@ -1,0 +1,13 @@
+FROM golang:1.14
+
+WORKDIR /go/src/app
+
+COPY go.mod .
+COPY go.sum .
+COPY tools tools
+COPY protos protos
+COPY tweets_service tweets_service
+
+RUN go build -o tweets-service tweets_service/*.go
+
+CMD ["/go/src/app/tweets-service"]
