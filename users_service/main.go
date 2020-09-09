@@ -746,14 +746,14 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	log.Logger = log.With().Caller().Logger()
 
-	psqlUrl := "postgres://user:password@localhost:5432/twitter_db?pool_max_conns=2"
+	psqlUrl := "postgres://user:password@host.docker.internal:5432/twitter_db?pool_max_conns=2"
 
 	var err error
 	if pool, err = pgxpool.Connect(context.Background(), psqlUrl); err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to postgresql server")
 	}
 
-	if nc, err = nats.Connect(nats.DefaultURL,
+	if nc, err = nats.Connect("nats://host.docker.internal:4222",
 		nats.UserInfo("user", "password")); err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to nats server")
 	}
@@ -762,7 +762,7 @@ func main() {
 	defer nc.Close()
 
 	rdb = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     "host.docker.internal:6379",
 		PoolSize: 2,
 	})
 

@@ -1,12 +1,12 @@
 version: '3'
 
 services:
-  database:
+  postgres:
     image: "postgres:alpine"
     env_file:
-      - database.env
+      - postgres.env
     volumes:
-      - database-data:/var/lib/postgresql/data/
+      - persistent-data:/var/lib/postgresql/data/
     ports:
       - "5432:5432"
 
@@ -15,7 +15,7 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - database-data:/var/lib/redis/data/
+      - persistent-data:/var/lib/redis/data/
 
   nats:
     image: 'nats:alpine'
@@ -25,5 +25,14 @@ services:
       - "4222:4222"
     hostname: nats-server
 
+  users:
+    build:
+      context: .
+      dockerfile: Dockerfile.users
+    depends_on:
+      - postgres
+      - redis
+      - nats
+
 volumes:
-  database-data:
+  persistent-data:
