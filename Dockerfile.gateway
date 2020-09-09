@@ -1,0 +1,15 @@
+FROM golang:1.14
+
+WORKDIR /go/src/app
+
+COPY go.mod .
+COPY go.sum .
+COPY tools tools
+COPY protos protos
+COPY gateway_service gateway_service
+
+RUN go build -o gateway-service gateway_service/*.go
+
+COPY compose-conf.json .
+
+CMD ["/go/src/app/gateway-service", "-config", "/go/src/app/compose-conf.json"]

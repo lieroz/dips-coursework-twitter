@@ -1,0 +1,14 @@
+FROM golang:1.14
+
+WORKDIR /go/src/app
+
+COPY go.mod .
+COPY go.sum .
+COPY tools tools
+COPY auth_service auth_service
+
+RUN go build -o auth-service auth_service/*.go
+
+COPY compose-conf.json .
+
+CMD ["/go/src/app/auth-service", "-config", "/go/src/app/compose-conf.json"]
