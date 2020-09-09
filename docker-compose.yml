@@ -25,6 +25,15 @@ services:
       - "4222:4222"
     hostname: nats-server
 
+  auth:
+    build:
+      context: .
+      dockerfile: Dockerfile.auth
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+
   users:
     build:
       context: .
@@ -35,6 +44,7 @@ services:
       - postgres
       - redis
       - nats
+      - auth
 
   tweets:
     build:
@@ -46,15 +56,7 @@ services:
       - postgres
       - redis
       - nats
-
-  auth:
-    build:
-      context: .
-      dockerfile: Dockerfile.auth
-    ports:
-      - "8000:8000"
-    depends_on:
-      - redis
+      - auth
 
   gateway:
     build:

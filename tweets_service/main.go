@@ -299,7 +299,7 @@ func main() {
 	log.Logger = log.With().Caller().Logger()
 
 	var configPath string
-	flag.StringVar(&configPath, "config", "compose-conf.json", "config file path")
+	flag.StringVar(&configPath, "config", "conf.json", "config file path")
 
 	flag.Parse()
 

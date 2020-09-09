@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -42,17 +44,82 @@ const (
  1. add oauth
 */
 
+type UserSignUpRequest struct {
+	Username    string `json:"username"`
+	Password    string `json:"password"`
+	Firstname   string `json:"firstname"`
+	Lastname    string `json:"lastname"`
+	Description string `json:"description"`
+}
+
+type UserCredentials struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 func SignUp(w http.ResponseWriter, r *http.Request) {
-	msgProto := &pb.CreateRequest{}
-	if err := jsonpb.Unmarshal(r.Body, msgProto); err != nil {
+	userRequest := &UserSignUpRequest{}
+	body, err := ioutil.ReadAll(r.Body)
+
+	if err != nil {
+		log.Error().Err(err).Send()
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if err := json.Unmarshal(body, userRequest); err != nil {
 		log.Error().Err(err).Send()
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {
+		authRequest := &UserCredentials{
+			Username: userRequest.Username,
+			Password: userRequest.Password,
+		}
+
+		body, err = json.Marshal(authRequest)
+		if err != nil {
+			log.Error().Err(err).Send()
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		resp, err := http.Post(fmt.Sprintf("http://%s:%d/signup",
+			tools.Conf.AuthServiceHost, tools.Conf.AuthPort), "application/json",
+			bytes.NewReader(body))
+		if err != nil {
+			log.Error().Err(err).Send()
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		var tokenCookie *http.Cookie = nil
+		cookies := resp.Cookies()
+
+		for _, cookie := range cookies {
+			if cookie.Name == "token" {
+				tokenCookie = cookie
+				break
+			}
+		}
+
+		if tokenCookie == nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
+		msgProto := &pb.CreateRequest{
+			Username:    userRequest.Username,
+			Firstname:   userRequest.Firstname,
+			Lastname:    userRequest.Lastname,
+			Description: userRequest.Description,
+		}
+
 		if _, err := usersClient.CreateUser(ctx, msgProto); err != nil {
 			s, _ := status.FromError(err)
+
 			switch s.Code() {
 			case codes.InvalidArgument:
 				w.WriteHeader(http.StatusBadRequest)
@@ -67,17 +134,78 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 				reconnect()
 			}
 			io.WriteString(w, s.Message())
+		} else {
+			http.SetCookie(w, tokenCookie)
 		}
 	}
 }
 
-func LogIn(w http.ResponseWriter, r *http.Request) {
+func SignIn(w http.ResponseWriter, r *http.Request) {
+	resp, err := http.Post(fmt.Sprintf("http://%s:%d/signin",
+		tools.Conf.AuthServiceHost, tools.Conf.AuthPort), "application/json",
+		r.Body)
+	if err != nil {
+		log.Error().Err(err).Send()
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	var tokenCookie *http.Cookie = nil
+	cookies := resp.Cookies()
+
+	for _, cookie := range cookies {
+		if cookie.Name == "token" {
+			tokenCookie = cookie
+			break
+		}
+	}
+
+	if tokenCookie == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	http.SetCookie(w, tokenCookie)
 }
 
-func LogOut(w http.ResponseWriter, r *http.Request) {
+func checkToken(r *http.Request) bool {
+	c, err := r.Cookie("token")
+	if err != nil {
+		log.Error().Err(err).Send()
+		return false
+	}
+
+	token := c.Value
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s:%d/refresh",
+		tools.Conf.AuthServiceHost, tools.Conf.AuthPort), nil)
+	if err != nil {
+		log.Error().Err(err).Send()
+		return false
+	}
+
+	req.AddCookie(&http.Cookie{Name: "token", Value: token})
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error().Err(err).Send()
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotModified {
+		return false
+	}
+
+	return true
 }
 
 func DeleteUser(w http.ResponseWriter, r *http.Request) {
+	if !checkToken(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	msgProto := &pb.DeleteRequest{}
 	if err := jsonpb.Unmarshal(r.Body, msgProto); err != nil {
 		log.Error().Err(err).Send()
@@ -105,6 +233,11 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetUserInfoSummary(w http.ResponseWriter, r *http.Request) {
+	if !checkToken(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	msgProto := &pb.GetSummaryRequest{}
 	if err := jsonpb.Unmarshal(r.Body, msgProto); err != nil {
 		log.Error().Err(err).Send()
@@ -137,6 +270,11 @@ func GetUserInfoSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetFollowers(w http.ResponseWriter, r *http.Request) {
+	if !checkToken(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	msgProto := &pb.GetUsersRequest{}
 	if err := jsonpb.Unmarshal(r.Body, msgProto); err != nil {
 		log.Error().Err(err).Send()
@@ -193,6 +331,11 @@ func GetFollowers(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetFollowing(w http.ResponseWriter, r *http.Request) {
+	if !checkToken(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	msgProto := &pb.GetUsersRequest{}
 	if err := jsonpb.Unmarshal(r.Body, msgProto); err != nil {
 		log.Error().Err(err).Send()
@@ -249,6 +392,11 @@ func GetFollowing(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetUserTimeline(w http.ResponseWriter, r *http.Request) {
+	if !checkToken(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	userProto := &pb.GetTimelineRequest{}
 	if err := jsonpb.Unmarshal(r.Body, userProto); err != nil {
 		log.Error().Err(err).Send()
@@ -323,6 +471,11 @@ func GetUserTimeline(w http.ResponseWriter, r *http.Request) {
 }
 
 func Follow(w http.ResponseWriter, r *http.Request) {
+	if !checkToken(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	msgProto := &pb.FollowRequest{}
 	if err := jsonpb.Unmarshal(r.Body, msgProto); err != nil {
 		log.Error().Err(err).Send()
@@ -354,6 +507,11 @@ func Follow(w http.ResponseWriter, r *http.Request) {
 }
 
 func Unfollow(w http.ResponseWriter, r *http.Request) {
+	if !checkToken(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	msgProto := &pb.FollowRequest{}
 	if err := jsonpb.Unmarshal(r.Body, msgProto); err != nil {
 		log.Error().Err(err).Send()
@@ -385,6 +543,11 @@ func Unfollow(w http.ResponseWriter, r *http.Request) {
 }
 
 func Tweet(w http.ResponseWriter, r *http.Request) {
+	if !checkToken(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	msgProto := &pb.CreateTweetRequest{}
 	if err := jsonpb.Unmarshal(r.Body, msgProto); err != nil {
 		log.Error().Err(err).Send()
@@ -412,6 +575,11 @@ func Tweet(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetUserTweets(w http.ResponseWriter, r *http.Request) {
+	if !checkToken(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	msgProto := &pb.GetTweetsRequest{}
 	if err := jsonpb.Unmarshal(r.Body, msgProto); err != nil {
 		log.Error().Err(err).Send()
@@ -467,6 +635,11 @@ func GetUserTweets(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteTweets(w http.ResponseWriter, r *http.Request) {
+	if !checkToken(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	msgProto := &pb.DeleteTweetsRequest{}
 	if err := jsonpb.Unmarshal(r.Body, msgProto); err != nil {
 		log.Error().Err(err).Send()
@@ -500,7 +673,7 @@ func main() {
 	log.Logger = log.With().Caller().Logger()
 
 	var configPath string
-	flag.StringVar(&configPath, "config", "compose-conf.json", "config file path")
+	flag.StringVar(&configPath, "config", "conf.json", "config file path")
 
 	flag.Parse()
 
@@ -527,8 +700,7 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/signup", SignUp).Methods("POST")
-	r.HandleFunc("/login", LogIn).Methods("POST")   // TODO
-	r.HandleFunc("/logout", LogOut).Methods("POST") // TODO
+	r.HandleFunc("/signin", SignIn).Methods("POST")
 	r.HandleFunc("/user/delete", DeleteUser).Methods("DELETE")
 	r.HandleFunc("/user/summary", GetUserInfoSummary).Methods("GET")
 	r.HandleFunc("/user/followers", GetFollowers).Methods("GET")
