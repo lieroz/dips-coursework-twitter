@@ -1,0 +1,11 @@
+FROM golang:1.14
+
+WORKDIR /go/src/app
+
+COPY go.mod .
+COPY go.sum .
+COPY auth_service auth_service
+
+RUN go build -o auth-service auth_service/*.go
+
+CMD ["/go/src/app/auth-service"]

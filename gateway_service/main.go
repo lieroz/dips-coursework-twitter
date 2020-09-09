@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"time"
@@ -24,7 +25,9 @@ import (
 
 var (
 	usersClient  pb.UsersClient
+	usersConn    *grpc.ClientConn
 	tweetsClient pb.TweetsClient
+	tweetsConn   *grpc.ClientConn
 )
 
 const (
@@ -56,6 +59,9 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			case codes.DeadlineExceeded:
 				w.WriteHeader(http.StatusRequestTimeout)
+			case codes.Unauthenticated:
+				w.WriteHeader(http.StatusUnauthorized)
+				reconnect()
 			}
 			io.WriteString(w, s.Message())
 		}
@@ -86,6 +92,9 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			case codes.DeadlineExceeded:
 				w.WriteHeader(http.StatusRequestTimeout)
+			case codes.Unauthenticated:
+				w.WriteHeader(http.StatusUnauthorized)
+				reconnect()
 			}
 			io.WriteString(w, s.Message())
 		}
@@ -112,6 +121,9 @@ func GetUserInfoSummary(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			case codes.DeadlineExceeded:
 				w.WriteHeader(http.StatusRequestTimeout)
+			case codes.Unauthenticated:
+				w.WriteHeader(http.StatusUnauthorized)
+				reconnect()
 			}
 			io.WriteString(w, s.Message())
 		} else {
@@ -140,6 +152,9 @@ func GetFollowers(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			case codes.DeadlineExceeded:
 				w.WriteHeader(http.StatusRequestTimeout)
+			case codes.Unauthenticated:
+				w.WriteHeader(http.StatusUnauthorized)
+				reconnect()
 			}
 			io.WriteString(w, s.Message())
 		} else {
@@ -193,6 +208,9 @@ func GetFollowing(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			case codes.DeadlineExceeded:
 				w.WriteHeader(http.StatusRequestTimeout)
+			case codes.Unauthenticated:
+				w.WriteHeader(http.StatusUnauthorized)
+				reconnect()
 			}
 			io.WriteString(w, s.Message())
 		} else {
@@ -245,6 +263,9 @@ func GetUserTimeline(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			case codes.DeadlineExceeded:
 				w.WriteHeader(http.StatusRequestTimeout)
+			case codes.Unauthenticated:
+				w.WriteHeader(http.StatusUnauthorized)
+				reconnect()
 			}
 			io.WriteString(w, s.Message())
 		} else {
@@ -259,6 +280,9 @@ func GetUserTimeline(w http.ResponseWriter, r *http.Request) {
 						w.WriteHeader(http.StatusInternalServerError)
 					case codes.DeadlineExceeded:
 						w.WriteHeader(http.StatusRequestTimeout)
+					case codes.Unauthenticated:
+						w.WriteHeader(http.StatusUnauthorized)
+						reconnect()
 					}
 					io.WriteString(w, s.Message())
 				} else {
@@ -317,6 +341,9 @@ func Follow(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			case codes.DeadlineExceeded:
 				w.WriteHeader(http.StatusRequestTimeout)
+			case codes.Unauthenticated:
+				w.WriteHeader(http.StatusUnauthorized)
+				reconnect()
 			}
 			io.WriteString(w, s.Message())
 		}
@@ -345,6 +372,9 @@ func Unfollow(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			case codes.DeadlineExceeded:
 				w.WriteHeader(http.StatusRequestTimeout)
+			case codes.Unauthenticated:
+				w.WriteHeader(http.StatusUnauthorized)
+				reconnect()
 			}
 			io.WriteString(w, s.Message())
 		}
@@ -369,6 +399,9 @@ func Tweet(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			case codes.DeadlineExceeded:
 				w.WriteHeader(http.StatusRequestTimeout)
+			case codes.Unauthenticated:
+				w.WriteHeader(http.StatusUnauthorized)
+				reconnect()
 			}
 			io.WriteString(w, s.Message())
 		}
@@ -393,6 +426,9 @@ func GetUserTweets(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			case codes.DeadlineExceeded:
 				w.WriteHeader(http.StatusRequestTimeout)
+			case codes.Unauthenticated:
+				w.WriteHeader(http.StatusUnauthorized)
+				reconnect()
 			}
 			io.WriteString(w, s.Message())
 		} else {
@@ -445,6 +481,9 @@ func DeleteTweets(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			case codes.DeadlineExceeded:
 				w.WriteHeader(http.StatusRequestTimeout)
+			case codes.Unauthenticated:
+				w.WriteHeader(http.StatusUnauthorized)
+				reconnect()
 			}
 			io.WriteString(w, s.Message())
 		}
@@ -457,31 +496,21 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	log.Logger = log.With().Caller().Logger()
 
-	perRPC := oauth.NewOauthAccess(fetchToken())
-	creds, err := credentials.NewClientTLSFromFile(data.Path("x509/ca_cert.pem"), "x.test.example.com")
-	if err != nil {
-		log.Fatal().Err(err).Send()
-	}
-	opts := []grpc.DialOption{
-		grpc.WithPerRPCCredentials(perRPC),
-		grpc.WithTransportCredentials(creds),
-	}
+	ticker := time.NewTicker(5 * time.Minute)
+	done := make(chan bool)
 
-	opts = append(opts, grpc.WithBlock())
+	go func() {
+		connect()
 
-	if conn, err := grpc.Dial("users:8001", opts...); err != nil {
-		log.Fatal().Err(err).Send()
-	} else {
-		defer conn.Close()
-		usersClient = pb.NewUsersClient(conn)
-	}
-
-	if conn, err := grpc.Dial("tweets:8002", opts...); err != nil {
-		log.Fatal().Err(err).Send()
-	} else {
-		defer conn.Close()
-		tweetsClient = pb.NewTweetsClient(conn)
-	}
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				reconnect()
+			}
+		}
+	}()
 
 	r := mux.NewRouter()
 	r.HandleFunc("/signup", SignUp).Methods("POST")
@@ -498,14 +527,65 @@ func main() {
 	r.HandleFunc("/tweets", GetUserTweets).Methods("GET")
 	r.HandleFunc("/tweets/delete", DeleteTweets).Methods("DELETE")
 
-	log.Info().Msg("Start listen")
+	log.Info().Msg("Start listen :8080")
 	if err := http.ListenAndServe("0.0.0.0:8080", r); err != nil {
 		log.Fatal().Err(err).Send()
 	}
+	done <- true
 }
 
+func connect() {
+	perRPC := oauth.NewOauthAccess(fetchToken())
+	creds, err := credentials.NewClientTLSFromFile(data.Path("x509/ca_cert.pem"), "x.test.example.com")
+	if err != nil {
+		log.Fatal().Err(err).Send()
+	}
+	opts := []grpc.DialOption{
+		grpc.WithPerRPCCredentials(perRPC),
+		grpc.WithTransportCredentials(creds),
+		grpc.WithBlock(),
+	}
+
+	if usersConn, err = grpc.Dial("host.docker.internal:8001", opts...); err != nil {
+		log.Error().Err(err).Send()
+	} else {
+		usersClient = pb.NewUsersClient(usersConn)
+	}
+
+	if tweetsConn, err = grpc.Dial("host.docker.internal:8002", opts...); err != nil {
+		log.Error().Err(err).Send()
+	} else {
+		tweetsClient = pb.NewTweetsClient(tweetsConn)
+	}
+}
+
+func reconnect() {
+	usersConn.Close()
+	tweetsConn.Close()
+
+	connect()
+}
+
+var authToken string
+
 func fetchToken() *oauth2.Token {
+	r, err := http.Get("http://host.docker.internal:8000/service/token")
+	if err != nil {
+		log.Error().Err(err).Send()
+		goto exit
+	}
+
+	if r.StatusCode == http.StatusCreated || r.StatusCode == http.StatusOK {
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			log.Error().Err(err).Send()
+			goto exit
+		}
+		authToken = string(body)
+	}
+
+exit:
 	return &oauth2.Token{
-		AccessToken: "some-secret-token",
+		AccessToken: authToken,
 	}
 }

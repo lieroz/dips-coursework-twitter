@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"strings"
 
 	"google.golang.org/grpc"
@@ -34,12 +36,28 @@ func GrpcError(code codes.Code, msg string) error {
 	return status.Error(code, msg)
 }
 
+var authToken string
+
 func valid(authorization []string) bool {
 	if len(authorization) < 1 {
 		return false
 	}
 	token := strings.TrimPrefix(authorization[0], "Bearer ")
-	return token == "some-secret-token"
+
+	r, err := http.Get("http://host.docker.internal:8000/service/token")
+	if err != nil {
+		return false
+	}
+
+	if r.StatusCode == http.StatusCreated || r.StatusCode == http.StatusOK {
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			return false
+		}
+		authToken = string(body)
+	}
+
+	return token == authToken
 }
 
 func EnsureValidToken(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {

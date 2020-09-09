@@ -47,6 +47,15 @@ services:
       - redis
       - nats
 
+  auth:
+    build:
+      context: .
+      dockerfile: Dockerfile.auth
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+
   gateway:
     build:
       context: .
@@ -59,6 +68,7 @@ services:
       - nats
       - users
       - tweets
+      - auth
 
 volumes:
   persistent-data:
