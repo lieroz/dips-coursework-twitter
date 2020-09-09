@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -21,6 +23,7 @@ import (
 	status "google.golang.org/grpc/status"
 
 	pb "github.com/lieroz/dips-coursework-twitter/protos"
+	"github.com/lieroz/dips-coursework-twitter/tools"
 )
 
 var (
@@ -496,6 +499,16 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	log.Logger = log.With().Caller().Logger()
 
+	var configPath string
+	flag.StringVar(&configPath, "config", "compose-conf.json", "config file path")
+
+	flag.Parse()
+
+	err := tools.ParseConfig(configPath)
+	if err != nil {
+		log.Fatal().Err(err).Send()
+	}
+
 	ticker := time.NewTicker(5 * time.Minute)
 	done := make(chan bool)
 
@@ -527,8 +540,9 @@ func main() {
 	r.HandleFunc("/tweets", GetUserTweets).Methods("GET")
 	r.HandleFunc("/tweets/delete", DeleteTweets).Methods("DELETE")
 
-	log.Info().Msg("Start listen :8080")
-	if err := http.ListenAndServe("0.0.0.0:8080", r); err != nil {
+	listenAddress := fmt.Sprintf("0.0.0.0:%d", tools.Conf.GatewayPort)
+	log.Info().Msgf("Start listen on port %s", listenAddress)
+	if err := http.ListenAndServe(listenAddress, r); err != nil {
 		log.Fatal().Err(err).Send()
 	}
 	done <- true
@@ -546,13 +560,15 @@ func connect() {
 		grpc.WithBlock(),
 	}
 
-	if usersConn, err = grpc.Dial("host.docker.internal:8001", opts...); err != nil {
+	if usersConn, err = grpc.Dial(fmt.Sprintf("%s:%d",
+		tools.Conf.UsersServiceHost, tools.Conf.UsersPort), opts...); err != nil {
 		log.Error().Err(err).Send()
 	} else {
 		usersClient = pb.NewUsersClient(usersConn)
 	}
 
-	if tweetsConn, err = grpc.Dial("host.docker.internal:8002", opts...); err != nil {
+	if tweetsConn, err = grpc.Dial(fmt.Sprintf("%s:%d",
+		tools.Conf.TweetsServiceHost, tools.Conf.TweetsPort), opts...); err != nil {
 		log.Error().Err(err).Send()
 	} else {
 		tweetsClient = pb.NewTweetsClient(tweetsConn)
@@ -569,7 +585,7 @@ func reconnect() {
 var authToken string
 
 func fetchToken() *oauth2.Token {
-	r, err := http.Get("http://host.docker.internal:8000/service/token")
+	r, err := http.Get(fmt.Sprintf("http://%s:%d/service/token", tools.Conf.AuthServiceHost, tools.Conf.AuthPort))
 	if err != nil {
 		log.Error().Err(err).Send()
 		goto exit

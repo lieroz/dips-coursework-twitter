@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -12,6 +14,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
+	"github.com/lieroz/dips-coursework-twitter/tools"
 )
 
 var (
@@ -103,9 +107,19 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	log.Logger = log.With().Caller().Logger()
 
+	var configPath string
+	flag.StringVar(&configPath, "config", "compose-conf.json", "config file path")
+
+	flag.Parse()
+
+	err := tools.ParseConfig(configPath)
+	if err != nil {
+		log.Fatal().Err(err).Send()
+	}
+
 	rdb = redis.NewClient(&redis.Options{
-		Addr:     "host.docker.internal:6379",
-		PoolSize: 2,
+		Addr:     tools.Conf.RedisUrl,
+		PoolSize: tools.Conf.RedisPoolSize,
 	})
 
 	r := mux.NewRouter()
@@ -122,8 +136,9 @@ func main() {
 		}
 	}
 
-	log.Info().Msg("Start listen :8000")
-	if err := http.ListenAndServe("0.0.0.0:8000", r); err != nil {
+	listenAddress := fmt.Sprintf("0.0.0.0:%d", tools.Conf.AuthPort)
+	log.Info().Msgf("Start listen on port %s", listenAddress)
+	if err := http.ListenAndServe(listenAddress, r); err != nil {
 		log.Fatal().Err(err).Send()
 	}
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -297,24 +298,31 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	log.Logger = log.With().Caller().Logger()
 
-	psqlUrl := "postgres://user:password@host.docker.internal:5432/twitter_db?pool_max_conns=2"
+	var configPath string
+	flag.StringVar(&configPath, "config", "compose-conf.json", "config file path")
 
-	var err error
-	if pool, err = pgxpool.Connect(context.Background(), psqlUrl); err != nil {
+	flag.Parse()
+
+	err := tools.ParseConfig(configPath)
+	if err != nil {
+		log.Fatal().Err(err).Send()
+	}
+
+	if pool, err = pgxpool.Connect(context.Background(), tools.Conf.PostgresUrl); err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to postgresql server")
 	}
 
-	if nc, err = nats.Connect("nats://host.docker.internal:4222",
-		nats.UserInfo("user", "password")); err != nil {
+	if nc, err = nats.Connect(tools.Conf.NatsUrl,
+		nats.UserInfo(tools.Conf.NatsUser, tools.Conf.NatsPassword)); err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to nats server")
 	}
-	nc.QueueSubscribe("tweets", "users_queue", natsCallback)
+	nc.QueueSubscribe("users", "tweets_queue", natsCallback)
 	nc.Flush()
 	defer nc.Close()
 
 	rdb = redis.NewClient(&redis.Options{
-		Addr:     "host.docker.internal:6379",
-		PoolSize: 2,
+		Addr:     tools.Conf.RedisUrl,
+		PoolSize: tools.Conf.RedisPoolSize,
 	})
 
 	cert, err := tls.LoadX509KeyPair(data.Path("x509/server_cert.pem"), data.Path("x509/server_key.pem"))
@@ -329,12 +337,12 @@ func main() {
 	s := grpc.NewServer(opts...)
 	pb.RegisterTweetsServer(s, &TweetsServerImpl{})
 
-	lis, err := net.Listen("tcp", port)
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", tools.Conf.TweetsPort))
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to listen")
 	}
 
-	log.Info().Msgf("Start listening on: %s", port)
+	log.Info().Msgf("Start listening on: %d", tools.Conf.TweetsPort)
 	if err := s.Serve(lis); err != nil {
 		log.Fatal().Err(err).Msg("Failed to serve grpc service")
 	}

@@ -10,4 +10,6 @@ COPY tweets_service tweets_service
 
 RUN go build -o tweets-service tweets_service/*.go
 
-CMD ["/go/src/app/tweets-service"]
+COPY compose-conf.json .
+
+CMD ["/go/src/app/tweets-service", "-config", "/go/src/app/compose-conf.json"]

@@ -10,4 +10,6 @@ COPY users_service users_service
 
 RUN go build -o users-service users_service/*.go
 
-CMD ["/go/src/app/users-service"]
+COPY compose-conf.json .
+
+CMD ["/go/src/app/users-service", "-config", "/go/src/app/compose-conf.json"]

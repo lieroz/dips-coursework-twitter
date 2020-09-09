@@ -1,0 +1,19 @@
+{
+    "redis_url": "redis:6379",
+    "redis_pool_size": 2,
+
+    "postgres_url": "postgres://user:password@postgres:5432/twitter_db?pool_max_conns=2",
+
+    "nats_url": "nats://nats:4222",
+    "nats_user": "user",
+    "nats_password": "password",
+
+    "auth_port": 8000,
+    "gateway_port": 8080,
+    "users_port": 8001,
+    "tweets_port": 8002,
+
+    "auth_service_host": "auth",
+    "users_service_host": "users",
+    "tweets_service_host": "tweets"
+}
