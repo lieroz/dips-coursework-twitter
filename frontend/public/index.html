@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <link rel="stylesheet" href="scripts/semantic-ui-css/semantic.min.css">
+  <link rel="stylesheet" href="scripts/semantic-ui-calendar/dist/calendar.min.css">
+  <title>Twitter</title>
+</head>
+<body>
+  <!-- Navigation Menu -->
+  <div class="ui orange menu">
+    <a class="item" href="/">
+      <i class="twitter icon"></i>
+      Twitter
+    </a>
+    <a class="item" href="/profile">
+      Profile
+    </a>
+    <div class="right menu">
+      <a class="item" href="/sign-in">
+        Sign-In
+      </a>
+    </div>
+  </div>
+
+  <!-- Error Template -->
+  <script id="error-template" type="text/x-handlebars-template">
+    <div class="ui {{color}} inverted segment" style="height:250px;">
+      <br>
+      <h2 class="ui center aligned icon header">
+        <i class="exclamation triangle icon"></i>
+        <div class="content">
+          {{title}}
+          <div class="sub header">{{message}}</div>
+        </div>
+      </h2>
+    </div>
+  </script>
+
+  <script id="auth-template" type="text/x-handlebars-template">
+    <div class="ui middle aligned center aligned grid">
+      <div class="column" style="width: 450px">
+        <h2 class="ui orange image header">
+          <i class="twitter icon"></i>
+          <div class="content">
+            {{title}}
+          </div>
+        </h2>
+        <form class="ui large form">
+          <div class="ui stacked segment">
+            <div class="field">
+              <div class="ui left icon input">
+                <i class="user icon"></i>
+                <input type="text" name="username" placeholder="Username">
+              </div>
+            </div>
+            {{{fields}}}
+            <div class="field">
+              <div class="ui left icon input">
+                <i class="lock icon"></i>
+                <input type="password" name="password" placeholder="Password">
+              </div>
+            </div>
+            <div class="ui fluid large orange submit button">{{action}}</div>
+          </div>
+
+          <div class="ui error message"></div>
+        </form>
+
+        <div class="ui message" style="text-align: center;">
+          {{{question}}}
+        </div>
+      </div>
+    </div>
+  </script>
+
+  <script id="home-template" type="text/x-handlebars-template">
+    <div class="ui middle aligned center aligned grid">
+      <div class="column" style="width: 1000px">
+        <div class="ui segment">
+          <div class="ui form">
+            <div class="field">
+              <textarea rows="3" style="resize: none;"></textarea>
+            </div>
+            <div style="display: flex;">
+              <button class="ui orange basic button" style="margin-left: auto; margin-right: 0;">Tweet</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="column" style="width: 1000px">
+        <div class="ui segment">
+
+          {{#each items}}
+          <div class="ui segment">
+            <div style="display: flex; ">
+              <label>@{{username}}</label>
+              <div style="margin-left: 10px; margin-right: 5px; margin-top: -1px;">
+                <i class="mini circle icon"></i>
+              </div>
+              <i class="calendar alternate icon"></i>
+              <div class="content">{{date}}</div>
+            </div>
+
+            <div class="extra text">
+              {{text}}
+            </div>
+  
+            <div style="display: flex; ">
+              <div style="margin-left: auto; margin-right: 0; display: flex;">
+                <a class="retweet icon item">
+                  <i class="retweet icon"></i>
+                </a>
+              </div>
+            </div>
+          </div>
+          {{/each}}
+
+        </div>
+      </div>
+
+    </div>
+  </script>
+
+  <script id="profile-template" type="text/x-handlebars-template">
+    <div class="ui middle aligned center aligned grid">
+      <div class="column" style="width: 600px">
+        <h2 class="ui orange header">
+          <div style="font-size: 50px;" class="content">
+            Andrey Kamakin
+          </div>
+        </h2>
+        
+        <div style="display: flex; ">
+          <div style="margin-left: 0; margin-right: auto; font-size: 20px;">@lieroz</div>
+          <div style="margin-left: auto; margin-right: 0; display: flex;">
+            <i class="calendar alternate icon"></i>
+            <div class="content">Joined June 2020</div>
+          </div>
+        </div>
+        
+        <div class="ui segment">
+          <h2 class="ui left floated header">Description</h2>
+          <div class="ui clearing divider">
+            Simple guy who loves programming and learning smth new through implementing interesting tasks
+          </div>
+        </div>
+ 
+         <div class="ui three item menu">
+          <a id="following" class="item" href="/following">Following</a>
+          <a class="item" href="/followers">Followers</a>
+          <a class="item" href="/tweets">Tweets</a>
+        </div>
+
+        <div style="font-size: 20px;" class="ui list">
+          {{#each items}}
+          <div class="item">
+            <div class="header">{{@key}}</div>
+            @{{this}}
+          </div>
+          <div class="ui clearing divider"></div>
+          {{/each}}
+        </div>
+
+      </div>
+    </div>
+  </script>
+
+  <!-- Page content -->
+  <div id="app"></div>
+
+  <!-- Scripts -->
+  <script src="scripts/jquery/dist/jquery.min.js"></script>
+  <script src="scripts/semantic-ui-css/semantic.min.js"></script>
+  <script src="scripts/axios/dist/axios.min.js"></script>
+  <script src="scripts/handlebars/dist/handlebars.min.js"></script>
+  <script src="scripts/vanilla-router/dist/vanilla-router.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
