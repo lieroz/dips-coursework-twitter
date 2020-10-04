@@ -51,6 +51,16 @@ const errorHandler = (err, req, res) => {
   }
 };
 
+app.get('/api/refresh', async (req, res) => {
+  try {
+    const token = await refreshToken(req.headers.token);
+    res.setHeader('token', token);
+    res.status(200).send('');
+  } catch (error) {
+    errorHandler(error, req, res);
+  }
+});
+
 app.post('/api/signup', async (req, res) => {
   try {
     const {username, firstname, lastname, description, password} = req.body;
@@ -81,12 +91,10 @@ app.post('/api/signin', async (req, res) => {
 
 app.get('/api/user/timeline', async (req, res) => {
   try {
-    const token = await refreshToken(req.headers.token);
-
+    const token = req.headers.token;
     const username = req.headers.username;
     const result = await api.get('/user/timeline', {headers: {Cookie: `token=${token}`}, data: {username: username}});
 
-    res.setHeader('token', token);
     res.status(200).send(result.data);
   } catch (error) {
     errorHandler(error, req, res);
@@ -95,12 +103,10 @@ app.get('/api/user/timeline', async (req, res) => {
 
 app.get('/api/user/summary', async (req, res) => {
   try {
-    const token = await refreshToken(req.headers.token);
-
+    const token = req.headers.token;
     const username = req.headers.username;
     const result = await api.get('/user/summary', {headers: {Cookie: `token=${token}`}, data: {username: username}});
 
-    res.setHeader('token', token);
     res.status(200).send(result.data);
   } catch (error) {
     errorHandler(error, req, res);
@@ -109,12 +115,10 @@ app.get('/api/user/summary', async (req, res) => {
 
 app.get('/api/user/following', async (req, res) => {
   try {
-    const token = await refreshToken(req.headers.token);
-
+    const token = req.headers.token;
     const username = req.headers.username;
     const result = await api.get('/user/following', {headers: {Cookie: `token=${token}`}, data: {username: username}});
 
-    res.setHeader('token', token);
     res.status(200).send(result.data);
   } catch (error) {
     errorHandler(error, req, res);
@@ -123,12 +127,10 @@ app.get('/api/user/following', async (req, res) => {
 
 app.get('/api/user/followers', async (req, res) => {
   try {
-    const token = await refreshToken(req.headers.token);
-
+    const token = req.headers.token;
     const username = req.headers.username;
     const result = await api.get('/user/followers', {headers: {Cookie: `token=${token}`}, data: {username: username}});
 
-    res.setHeader('token', token);
     res.status(200).send(result.data);
   } catch (error) {
     errorHandler(error, req, res);
@@ -137,13 +139,14 @@ app.get('/api/user/followers', async (req, res) => {
 
 app.get('/api/tweets', async (req, res) => {
   try {
-    const token = await refreshToken(req.headers.token);
-
-    const tweets = req.headers.tweets.split(',');
-    const result = await api.get('/tweets', {headers: {Cookie: `token=${token}`}, data: {tweets: tweets}});
-
-    res.setHeader('token', token);
-    res.status(200).send(result.data);
+    if (req.headers.tweets === 'undefined') {
+      res.status(200).send('');
+    } else {
+      const token = req.headers.token;
+      const tweets = req.headers.tweets.split(',');
+      const result = await api.get('/tweets', {headers: {Cookie: `token=${token}`}, data: {tweets: tweets}});
+      res.status(200).send(result.data);
+    }
   } catch (error) {
     errorHandler(error, req, res);
   }

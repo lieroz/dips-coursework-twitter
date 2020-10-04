@@ -15,6 +15,15 @@ window.addEventListener('load', () => {
     timeout: 5000,
   });
 
+  async function refreshToken() {
+    const token = localStorage.getItem('token');
+    const result = await api.get('/refresh', {headers: {token: token}});
+
+    if (token != result.headers.token) {
+      localStorage.setItem('token', result.headers.token);
+    }
+  }
+
   const router = new Router({
     mode: 'history',
     page404: (path) => {
@@ -31,6 +40,9 @@ window.addEventListener('load', () => {
   const showError = (error) => {
     const { title, message } = error.response.data;
     const html = errorTemplate({ color: 'red', title, message });
+
+    setInterval(refreshToken, 30*1000);
+
     el.html(html);
   };
 
@@ -74,10 +86,12 @@ window.addEventListener('load', () => {
 
     try {
       const response = await api.post('/signin', { username, password });
-      token = response.headers.token;
+      const token = response.headers.token;
 
       localStorage.setItem("username", username);
       localStorage.setItem("token", token);
+
+      setInterval(refreshToken, 30*1000);
 
       router.navigateTo('/');
     } catch (error) {
@@ -126,10 +140,12 @@ window.addEventListener('load', () => {
 
     try {
       const response = await api.post('/signup', { username, firstname, lastname, description, password });
-      token = response.headers.token;
+      const token = response.headers.token;
 
       localStorage.setItem("username", username);
       localStorage.setItem("token", token);
+
+      setInterval(refreshToken, 30*1000);
 
       router.navigateTo('/');
     } catch (error) {
@@ -194,9 +210,6 @@ window.addEventListener('load', () => {
       const token = localStorage.getItem("token");
 
       const response = await api.get('/user/summary', { headers: {"username": username, "token": token} });
-      console.log(response.data);
-
-      localStorage.setItem("token", response.headers.token);
 
       localStorage.setItem("username", response.data.username);
       localStorage.setItem("firstname", response.data.firstname);
@@ -229,7 +242,6 @@ window.addEventListener('load', () => {
 
       const token = localStorage.getItem("token");
       const response = await api.get('/user/following', { headers: {"username": username, "token": token} });
-      localStorage.setItem("token", response.headers.token);
 
       const date = new Date(parseInt(timestamp, 10) * 1000);
       const html = profileTemplate({
@@ -256,7 +268,6 @@ window.addEventListener('load', () => {
 
       const token = localStorage.getItem("token");
       const response = await api.get('/user/followers', { headers: {"username": username, "token": token} });
-      localStorage.setItem("token", response.headers.token);
 
       const date = new Date(parseInt(timestamp, 10) * 1000);
       const html = profileTemplate({
@@ -280,13 +291,13 @@ window.addEventListener('load', () => {
       const lastname = localStorage.getItem("lastname");
       const description = localStorage.getItem("description");
       const timestamp = localStorage.getItem("date");
-      const tweets = localStorage.getItem("tweets");
-
-      const token = localStorage.getItem("token");
-      const response = await api.get('/tweets', {headers: {"tweets": tweets, "token": token} });
-      localStorage.setItem("token", response.headers.token);
 
       const date = new Date(parseInt(timestamp, 10) * 1000);
+
+      const tweets = localStorage.getItem("tweets");
+      const token = localStorage.getItem("token");
+      const response = await api.get('/tweets', {headers: {"tweets": tweets, "token": token} });
+
       const html = profileTemplateTweets({
         username: username,
         firstname: firstname,
@@ -295,6 +306,7 @@ window.addEventListener('load', () => {
         date: date.toDateString(),
         items: response.data,
       });
+
       el.html(html);
     } catch (error) {
         showError(error);
@@ -313,7 +325,6 @@ window.addEventListener('load', () => {
         obj['date'] = date.toDateString();
       }
 
-      localStorage.setItem("token", response.headers.token);
       const html = homeTemplate({ items: response.data });
       el.html(html);
     } catch (error) {
