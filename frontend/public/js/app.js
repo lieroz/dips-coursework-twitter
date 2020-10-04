@@ -238,6 +238,21 @@ window.addEventListener('load', () => {
     }
   });
 
+  const unfollowUserHandler = async (item) => {
+    const followed = item.target.id.split('_').pop();
+    const username = localStorage.getItem("username");
+    const token = localStorage.getItem("token");
+
+    try {
+      const response = await api.post('/user/unfollow', {follower: username, followed: followed}, {headers: {"token": token}});
+      router.navigateTo('/following');
+
+    } catch (error) {
+      showError(error);
+    }
+    return false;
+  };
+
   router.add('/following', async () => {
     try {
       const username = localStorage.getItem("username");
@@ -256,9 +271,11 @@ window.addEventListener('load', () => {
         lastname: lastname,
         description: description,
         date: date.toDateString(),
+        following: true,
         items: response.data,
       });
       el.html(html);
+      $("button[id^='unfollow_user_button_']").click(unfollowUserHandler);
     } catch (error) {
         showError(error);
     }
@@ -336,6 +353,25 @@ window.addEventListener('load', () => {
     return false;
   };
 
+  const followUserHandler = async () => {
+    const followed = $('#follow_user_input').val();
+    if (followed !== "") {
+      $('#follow_user_input').val('');
+
+      const username = localStorage.getItem("username");
+      const token = localStorage.getItem("token");
+
+      try {
+        const response = await api.post('/user/follow', {follower: username, followed: followed}, {headers: {"token": token}});
+        router.navigateTo('/');
+
+      } catch (error) {
+        showError(error);
+      }
+    }
+    return false;
+  };
+
   router.add('/', async () => {
     try {
       const username = localStorage.getItem("username");
@@ -352,6 +388,7 @@ window.addEventListener('load', () => {
       el.html(html);
 
       $('#tweet_button').click(postTweetHandler);
+      $('#follow_user_button').click(followUserHandler);
     } catch (error) {
       showError(error);
     } finally {

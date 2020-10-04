@@ -18,6 +18,12 @@
     <a class="item" href="/profile">
       Profile
     </a>
+    <div class="ui transparent input" style="margin-left: 10px">
+      <input type="text" placeholder="Search user ..." id="follow_user_input">
+    </div>
+    <button class="ui small icon button" id="follow_user_button">
+      <i class="arrow circle right icon"></i>
+    </button>
     <div class="right menu">
       <a class="item" href="/signin">
         Sign-In
@@ -126,6 +132,10 @@
   </script>
 
   <script id="profile-template" type="text/x-handlebars-template">
+    <button class="massive ui orange button" style="margin-left: 20px;" id="delete_user_button">
+      Delete User
+    </button>
+
     <div class="ui middle aligned center aligned grid">
       <div class="column" style="width: 600px">
         <h2 class="ui orange header">
@@ -157,14 +167,20 @@
 
         <div style="font-size: 20px;" class="ui list">
           {{#each items}}
-          <div class="item">
-            <div class="header">@{{username}}</div>
-            {{firstname}} {{lastname}}
+          <div>
+            {{#if ../following}}
+            <button class="ui small orange button" id="unfollow_user_button_{{username}}">
+              Unfollow
+            </button>
+            {{/if}}
+            <div class="item">
+              <div class="header" id="username_{{username}}">@{{username}}</div>
+              {{firstname}} {{lastname}}
+            </div>
+            <div class="ui clearing divider"></div>
           </div>
-          <div class="ui clearing divider"></div>
           {{/each}}
         </div>
-
       </div>
     </div>
   </script>

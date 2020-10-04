@@ -161,7 +161,31 @@ app.post('/api/tweets/tweet', async (req, res) => {
     const token = req.headers.token;
     const {creator, content} = req.body;
 
-    const result = await api.post('/tweets/tweet', {creator: creator, content: content}, {headers: {Cookie: `token=${token}`}});
+    const result = await api.post('/tweets/tweet', {creator: creator, content: content}, {headers: {cookie: `token=${token}`}});
+    res.status(200).send('');
+  } catch (error) {
+    errorHandler(error, req, res);
+  }
+});
+
+app.post('/api/user/follow', async (req, res) => {
+  try {
+    const token = req.headers.token;
+    const {follower, followed} = req.body;
+
+    const result = await api.post('/user/follow', {follower: follower, followed: followed}, {headers: {cookie: `token=${token}`}});
+    res.status(200).send('');
+  } catch (error) {
+    errorHandler(error, req, res);
+  }
+});
+
+app.post('/api/user/unfollow', async (req, res) => {
+  try {
+    const token = req.headers.token;
+    const {follower, followed} = req.body;
+
+    const result = await api.post('/user/unfollow', {follower: follower, followed: followed}, {headers: {cookie: `token=${token}`}});
     res.status(200).send('');
   } catch (error) {
     errorHandler(error, req, res);
