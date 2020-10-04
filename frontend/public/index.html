@@ -19,7 +19,7 @@
       Profile
     </a>
     <div class="right menu">
-      <a class="item" href="/sign-in">
+      <a class="item" href="/signin">
         Sign-In
       </a>
     </div>
@@ -53,14 +53,14 @@
             <div class="field">
               <div class="ui left icon input">
                 <i class="user icon"></i>
-                <input type="text" name="username" placeholder="Username">
+                <input type="text" name="username" id="username" placeholder="Username">
               </div>
             </div>
             {{{fields}}}
             <div class="field">
               <div class="ui left icon input">
                 <i class="lock icon"></i>
-                <input type="password" name="password" placeholder="Password">
+                <input type="password" name="password" id="password" placeholder="Password">
               </div>
             </div>
             <div class="ui fluid large orange submit button">{{action}}</div>
@@ -97,7 +97,7 @@
           {{#each items}}
           <div class="ui segment">
             <div style="display: flex; ">
-              <label>@{{username}}</label>
+              <label>@{{creator}}</label>
               <div style="margin-left: 10px; margin-right: 5px; margin-top: -1px;">
                 <i class="mini circle icon"></i>
               </div>
@@ -106,7 +106,7 @@
             </div>
 
             <div class="extra text">
-              {{text}}
+              {{content}}
             </div>
   
             <div style="display: flex; ">

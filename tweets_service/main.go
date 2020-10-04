@@ -281,6 +281,8 @@ func natsCallback(natsMsg *nats.Msg) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	log.Warn().Msg(string(natsMsg.Data))
+
 	msg := &pb.NatsMessage{}
 	proto.Unmarshal(natsMsg.Data, msg)
 
@@ -316,7 +318,7 @@ func main() {
 		nats.UserInfo(tools.Conf.NatsUser, tools.Conf.NatsPassword)); err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to nats server")
 	}
-	nc.QueueSubscribe("users", "tweets_queue", natsCallback)
+	nc.QueueSubscribe("tweets", "users_queue", natsCallback)
 	nc.Flush()
 	defer nc.Close()
 

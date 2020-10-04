@@ -453,7 +453,7 @@ func GetUserTimeline(w http.ResponseWriter, r *http.Request) {
 
 						if !in.GetError() {
 							if first {
-								io.WriteString(w, "{")
+								io.WriteString(w, "[")
 								first = false
 							} else {
 								io.WriteString(w, ",")
@@ -463,7 +463,7 @@ func GetUserTimeline(w http.ResponseWriter, r *http.Request) {
 						}
 					}
 
-					io.WriteString(w, "}")
+					io.WriteString(w, "]")
 				}
 			}
 		}

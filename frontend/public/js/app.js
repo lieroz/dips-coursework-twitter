@@ -8,6 +8,7 @@ window.addEventListener('load', () => {
   const homeTemplate = Handlebars.compile($('#home-template').html())
 
   // Instantiate api handler
+  axios.defaults.withCredentials = true
   const api = axios.create({
     baseURL: 'http://localhost:3000/api',
     timeout: 5000,
@@ -66,46 +67,124 @@ window.addEventListener('load', () => {
       });
   }
 
-  router.add('/sign-in', () => {
+  const signIn = async () => {
+    const username = $('#username').val();
+    const password = $('#password').val();
+
+    try {
+      const response = await api.post('/signin', { username, password });
+      token = response.headers.token;
+
+      localStorage.setItem("username", username);
+      localStorage.setItem("token", token);
+
+      router.navigateTo('/');
+    } catch (error) {
+      showError(error);
+    } finally {
+      $('.segment').removeClass('loading');
+    }
+  };
+
+  const signInHandler = () => {
+    if ($('.ui.form').form('is valid')) {
+      // hide error message
+      $('.ui.error.message').hide();
+      // Indicate loading status
+      $('.segment').addClass('loading');
+      signIn();
+      // Prevent page from submitting to server
+      return false;
+    }
+    return true;
+  };
+
+
+  router.add('/signin', () => {
     const html = authTemplate({
       title: 'Log-in to your account',
       action: 'Login',
-      question: 'New to us? <a href="/sign-up">Sign Up</a>',
+      question: 'New to us? <a href="/signup">Sign Up</a>',
     });
     el.html(html);
 
-    formValidator();
+    try {
+      formValidator();
+      $('.submit').click(signInHandler);
+    } catch (error) {
+        showError(error);
+    }
   });
 
-  router.add('/sign-up', () => {
+  const signUp = async () => {
+    const username = $('#username').val();
+    const firstname = $('#firstname').val();
+    const lastname = $('#lastname').val();
+    const description = $('#description').val();
+    const password = $('#password').val();
+
+    try {
+      const response = await api.post('/signup', { username, firstname, lastname, description, password });
+      token = response.headers.token;
+
+      localStorage.setItem("username", username);
+      localStorage.setItem("token", token);
+
+      router.navigateTo('/');
+    } catch (error) {
+      showError(error);
+    } finally {
+      $('.segment').removeClass('loading');
+    }
+  };
+
+  const signUpHandler = () => {
+    if ($('.ui.form').form('is valid')) {
+      // hide error message
+      $('.ui.error.message').hide();
+      // Indicate loading status
+      $('.segment').addClass('loading');
+      signUp();
+      // Prevent page from submitting to server
+      return false;
+    }
+    return true;
+  };
+
+  router.add('/signup', async () => {
     const html = authTemplate({
       title: 'Create account ',
       action: 'Create',
-      question: 'Already with us? <a href="/sign-in">Sign In</a>',
+      question: 'Already with us? <a href="/signin">Sign In</a>',
       fields: `
             <div class="field">
               <div class="ui left icon input">
                 <i class="circle icon"></i>
-                <input type="text" name="firstname" placeholder="Firstname">
+                <input type="text" name="firstname" id="firstname" placeholder="Firstname">
               </div>
             </div>
             <div class="field">
               <div class="ui left icon input">
                 <i class="circle icon"></i>
-                <input type="text" name="lastname" placeholder="Lastname">
+                <input type="text" name="lastname" id="lastname" placeholder="Lastname">
               </div>
             </div>
             <div class="field">
               <div class="ui left icon input">
                 <i class="circle icon"></i>
-                <input type="text" name="description" placeholder="Description">
+                <input type="text" name="description" id="description" placeholder="Description">
               </div>
             </div>
       `,
     });
     el.html(html);
 
-    formValidator();
+    try {
+      formValidator();
+      $('.submit').click(signUpHandler);
+    } catch (error) {
+        showError(error);
+    }
   });
 
   router.add('/profile', () => {
@@ -152,33 +231,25 @@ window.addEventListener('load', () => {
     el.html(html);
   });
 
-  router.add('/', () => {
-    const html = homeTemplate({
-      items: {
-        1: {
-          username: 'lieroz',
-          date: 'June 2020',
-          text: `Ours is a life of constant reruns. 
-            We're always circling back to where we'd we started, then starting all over again. 
-            Even if we don't run extra laps that day, we surely will come back for more of the same another day soon.`,
-        },
-        2: {
-          username: 'lieroz',
-          date: 'June 2020',
-          text: `Ours is a life of constant reruns. 
-            We're always circling back to where we'd we started, then starting all over again. 
-            Even if we don't run extra laps that day, we surely will come back for more of the same another day soon.`,
-        },
-        3: {
-          username: 'lieroz',
-          date: 'June 2020',
-          text: `Ours is a life of constant reruns. 
-            We're always circling back to where we'd we started, then starting all over again. 
-            Even if we don't run extra laps that day, we surely will come back for more of the same another day soon.`,
-        },
-      },
-    });
-    el.html(html);
+  router.add('/', async () => {
+    try {
+      const username = localStorage.getItem("username");
+      const token = localStorage.getItem("token");
+
+      const response = await api.get('/user/timeline', { headers: {"username": username, "token": token} });
+
+      for (obj of response.data) {
+        let date = new Date(parseInt(obj.creationTimestamp, 10) * 1000);
+        obj['date'] = date.toDateString();
+      }
+
+      const html = homeTemplate({ items: response.data });
+      el.html(html);
+    } catch (error) {
+      showError(error);
+    } finally {
+      $('.segment').removeClass('loading');
+    }
   });
 
   router.navigateTo(window.location.pathname);
