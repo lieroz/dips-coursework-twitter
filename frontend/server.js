@@ -159,9 +159,9 @@ app.get('/api/tweets', async (req, res) => {
 app.post('/api/tweets/tweet', async (req, res) => {
   try {
     const token = req.headers.token;
-    const {creator, content} = req.body;
+    const {creator, content, parentId} = req.body;
 
-    const result = await api.post('/tweets/tweet', {creator: creator, content: content}, {headers: {cookie: `token=${token}`}});
+    const result = await api.post('/tweets/tweet', {creator: creator, content: content, parentId: parentId}, {headers: {cookie: `token=${token}`}});
     res.status(200).send('');
   } catch (error) {
     errorHandler(error, req, res);

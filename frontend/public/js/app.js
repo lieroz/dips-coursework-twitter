@@ -360,7 +360,7 @@ window.addEventListener('load', () => {
       const token = localStorage.getItem("token");
 
       try {
-        const response = await api.post('/tweets/tweet', {creator: username, content: content }, {headers: {"token": token}});
+        const response = await api.post('/tweets/tweet', {parentId: 0, creator: username, content: content }, {headers: {"token": token}});
       } catch (error) {
         showError(error);
       }
@@ -387,6 +387,21 @@ window.addEventListener('load', () => {
     return false;
   };
 
+  const retweetHandler = async (item) => {
+    const id = item.target.id.split('_').pop();
+    const username = localStorage.getItem("username");
+    const token = localStorage.getItem("token");
+    const content = document.getElementById(`tweet_content_${id}`).innerText;
+
+    try {
+      const response = await api.post('/tweets/tweet', {parentId: id, creator: username, content: content}, {headers: {"token": token}});
+
+    } catch (error) {
+      showError(error);
+    }
+    return false;
+  };
+
   router.add('/', async () => {
     try {
       const username = localStorage.getItem("username");
@@ -404,6 +419,7 @@ window.addEventListener('load', () => {
 
       $('#tweet_button').click(postTweetHandler);
       $('#follow_user_button').click(followUserHandler);
+      $("button[id^='retweet_button_']").click(retweetHandler);
     } catch (error) {
       showError(error);
     } finally {
