@@ -5,6 +5,7 @@ window.addEventListener('load', () => {
   const errorTemplate = Handlebars.compile($('#error-template').html());
   const authTemplate = Handlebars.compile($('#auth-template').html());
   const profileTemplate = Handlebars.compile($('#profile-template').html());
+  const profileTemplateTweets = Handlebars.compile($('#profile-template-tweets').html());
   const homeTemplate = Handlebars.compile($('#home-template').html())
 
   // Instantiate api handler
@@ -202,6 +203,7 @@ window.addEventListener('load', () => {
       localStorage.setItem("lastname", response.data.lastname);
       localStorage.setItem("description", response.data.description);
       localStorage.setItem("date", response.data.registrationTimestamp);
+      localStorage.setItem("tweets", response.data.tweets);
 
       const date = new Date(parseInt(response.data.registrationTimestamp, 10) * 1000);
       const html = profileTemplate({
@@ -226,10 +228,7 @@ window.addEventListener('load', () => {
       const timestamp = localStorage.getItem("date");
 
       const token = localStorage.getItem("token");
-
       const response = await api.get('/user/following', { headers: {"username": username, "token": token} });
-      console.log(response.data);
-
       localStorage.setItem("token", response.headers.token);
 
       const date = new Date(parseInt(timestamp, 10) * 1000);
@@ -256,10 +255,7 @@ window.addEventListener('load', () => {
       const timestamp = localStorage.getItem("date");
 
       const token = localStorage.getItem("token");
-
       const response = await api.get('/user/followers', { headers: {"username": username, "token": token} });
-      console.log(response.data);
-
       localStorage.setItem("token", response.headers.token);
 
       const date = new Date(parseInt(timestamp, 10) * 1000);
@@ -277,22 +273,32 @@ window.addEventListener('load', () => {
     }
   });
 
-  router.add('/tweets', () => {
-    const username = localStorage.getItem("username");
-    const firstname = localStorage.getItem("firstname");
-    const lastname = localStorage.getItem("lastname");
-    const description = localStorage.getItem("description");
-    const timestamp = localStorage.getItem("date");
+  router.add('/tweets', async () => {
+    try {
+      const username = localStorage.getItem("username");
+      const firstname = localStorage.getItem("firstname");
+      const lastname = localStorage.getItem("lastname");
+      const description = localStorage.getItem("description");
+      const timestamp = localStorage.getItem("date");
+      const tweets = localStorage.getItem("tweets");
 
-    const date = new Date(parseInt(timestamp, 10) * 1000);
-    const html = profileTemplate({
-      username: username,
-      firstname: firstname,
-      lastname: lastname,
-      description: description,
-      date: date.toDateString(),
-    });
-    el.html(html);
+      const token = localStorage.getItem("token");
+      const response = await api.get('/tweets', {headers: {"tweets": tweets, "token": token} });
+      localStorage.setItem("token", response.headers.token);
+
+      const date = new Date(parseInt(timestamp, 10) * 1000);
+      const html = profileTemplateTweets({
+        username: username,
+        firstname: firstname,
+        lastname: lastname,
+        description: description,
+        date: date.toDateString(),
+        items: response.data,
+      });
+      el.html(html);
+    } catch (error) {
+        showError(error);
+    }
   });
 
   router.add('/', async () => {

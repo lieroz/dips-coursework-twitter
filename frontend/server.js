@@ -135,6 +135,20 @@ app.get('/api/user/followers', async (req, res) => {
   }
 });
 
+app.get('/api/tweets', async (req, res) => {
+  try {
+    const token = await refreshToken(req.headers.token);
+
+    const tweets = req.headers.tweets.split(',');
+    const result = await api.get('/tweets', {headers: {Cookie: `token=${token}`}, data: {tweets: tweets}});
+
+    res.setHeader('token', token);
+    res.status(200).send(result.data);
+  } catch (error) {
+    errorHandler(error, req, res);
+  }
+});
+
 // Redirect all traffic to index.html
 app.use((req, res) => res.sendFile(`${__dirname}/public/index.html`));
 
