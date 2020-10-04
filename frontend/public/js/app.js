@@ -307,6 +307,20 @@ window.addEventListener('load', () => {
     }
   });
 
+  const deleteTweetsHandler = async (item) => {
+    const id = item.target.id.split('_').pop();
+    const token = localStorage.getItem("token");
+
+    try {
+      const response = await api.post('/tweets/delete', {tweets: [id]}, {headers: {"token": token}});
+      router.navigateTo('/tweets');
+
+    } catch (error) {
+      showError(error);
+    }
+    return false;
+  };
+
   router.add('/tweets', async () => {
     try {
       const username = localStorage.getItem("username");
@@ -331,6 +345,7 @@ window.addEventListener('load', () => {
       });
 
       el.html(html);
+      $("button[id^='delete_tweet_button_']").click(deleteTweetsHandler);
     } catch (error) {
         showError(error);
     }

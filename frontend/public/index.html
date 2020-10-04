@@ -132,10 +132,6 @@
   </script>
 
   <script id="profile-template" type="text/x-handlebars-template">
-    <button class="massive ui orange button" style="margin-left: 20px;" id="delete_user_button">
-      Delete User
-    </button>
-
     <div class="ui middle aligned center aligned grid">
       <div class="column" style="width: 600px">
         <h2 class="ui orange header">
@@ -217,6 +213,9 @@
 
         <div style="font-size: 20px;" class="ui list">
           {{#each items}}
+          <button class="ui small orange button" id="delete_tweet_button_{{id}}">
+            Delete
+          </button>
           <div class="item">
             <div class="header">@{{creator}}</div>
               {{content}}

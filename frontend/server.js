@@ -192,6 +192,18 @@ app.post('/api/user/unfollow', async (req, res) => {
   }
 });
 
+app.post('/api/tweets/delete', async (req, res) => {
+  try {
+    const token = req.headers.token;
+    const {tweets} = req.body;
+
+    const result = await api.delete('/tweets/delete', {headers: {Cookie: `token=${token}`}, data: {tweets: tweets}});
+    res.status(200).send('');
+  } catch (error) {
+    errorHandler(error, req, res);
+  }
+});
+
 // Redirect all traffic to index.html
 app.use((req, res) => res.sendFile(`${__dirname}/public/index.html`));
 
