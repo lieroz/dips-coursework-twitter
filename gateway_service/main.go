@@ -315,7 +315,7 @@ func GetFollowers(w http.ResponseWriter, r *http.Request) {
 
 				if !in.GetError() {
 					if first {
-						io.WriteString(w, "{")
+						io.WriteString(w, "[")
 						first = false
 					} else {
 						io.WriteString(w, ",")
@@ -325,7 +325,7 @@ func GetFollowers(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			io.WriteString(w, "}")
+			io.WriteString(w, "]")
 		}
 	}
 }
@@ -376,7 +376,7 @@ func GetFollowing(w http.ResponseWriter, r *http.Request) {
 
 				if !in.GetError() {
 					if first {
-						io.WriteString(w, "{")
+						io.WriteString(w, "[")
 						first = false
 					} else {
 						io.WriteString(w, ",")
@@ -386,7 +386,7 @@ func GetFollowing(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			io.WriteString(w, "}")
+			io.WriteString(w, "]")
 		}
 	}
 }
@@ -619,7 +619,7 @@ func GetUserTweets(w http.ResponseWriter, r *http.Request) {
 
 				if !in.GetError() {
 					if first {
-						io.WriteString(w, "{")
+						io.WriteString(w, "[")
 						first = false
 					} else {
 						io.WriteString(w, ",")
@@ -629,7 +629,7 @@ func GetUserTweets(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			io.WriteString(w, "}")
+			io.WriteString(w, "]")
 		}
 	}
 }

@@ -93,6 +93,48 @@ app.get('/api/user/timeline', async (req, res) => {
   }
 });
 
+app.get('/api/user/summary', async (req, res) => {
+  try {
+    const token = await refreshToken(req.headers.token);
+
+    const username = req.headers.username;
+    const result = await api.get('/user/summary', {headers: {Cookie: `token=${token}`}, data: {username: username}});
+
+    res.setHeader('token', token);
+    res.status(200).send(result.data);
+  } catch (error) {
+    errorHandler(error, req, res);
+  }
+});
+
+app.get('/api/user/following', async (req, res) => {
+  try {
+    const token = await refreshToken(req.headers.token);
+
+    const username = req.headers.username;
+    const result = await api.get('/user/following', {headers: {Cookie: `token=${token}`}, data: {username: username}});
+
+    res.setHeader('token', token);
+    res.status(200).send(result.data);
+  } catch (error) {
+    errorHandler(error, req, res);
+  }
+});
+
+app.get('/api/user/followers', async (req, res) => {
+  try {
+    const token = await refreshToken(req.headers.token);
+
+    const username = req.headers.username;
+    const result = await api.get('/user/followers', {headers: {Cookie: `token=${token}`}, data: {username: username}});
+
+    res.setHeader('token', token);
+    res.status(200).send(result.data);
+  } catch (error) {
+    errorHandler(error, req, res);
+  }
+});
+
 // Redirect all traffic to index.html
 app.use((req, res) => res.sendFile(`${__dirname}/public/index.html`));
 
