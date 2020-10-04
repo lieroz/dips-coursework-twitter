@@ -16,15 +16,17 @@ window.addEventListener('load', () => {
   });
 
   async function refreshToken() {
-    try {
-      const token = localStorage.getItem('token');
-      const result = await api.get('/refresh', {headers: {token: token}});
+    const token = localStorage.getItem('token');
+    if (token !== 'undefined') {
+      try {
+        const result = await api.get('/refresh', {headers: {token: token}});
 
-      if (token != result.headers.token) {
-        localStorage.setItem('token', result.headers.token);
+        if (token != result.headers.token) {
+          localStorage.setItem('token', result.headers.token);
+        }
+      } catch (error) {
+        console.log(error);
       }
-    } catch (error) {
-      console.log(error);
     }
   }
 
@@ -44,9 +46,14 @@ window.addEventListener('load', () => {
 
   // Display Error Banner
   const showError = (error) => {
-    const { title, message } = error.response.data;
-    const html = errorTemplate({ color: 'red', title, message });
-    el.html(html);
+    console.log(error.response);
+    if (error.response.status === 401) {
+      router.navigateTo('/signin');
+    } else {
+      const { title, message } = error.response.data;
+      const html = errorTemplate({ color: 'red', title, message });
+      el.html(html);
+    }
   };
 
   const formValidator = () => {
