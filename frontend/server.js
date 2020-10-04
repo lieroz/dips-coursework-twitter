@@ -24,6 +24,19 @@ const api = axios.create({
   timeout: 5000,
 });
 
+const refreshApi = axios.create({
+  baseURL: 'http://localhost:8000',
+  timeout: 5000,
+});
+
+async function refreshToken(token) {
+  const result = await refreshApi.get('/refresh', {headers: {Cookie: `token=${token}`}});
+  if (result.status == 201) {
+    return headers['set-cookie'][0].split(";")[0].split("=")[1];
+  }
+  return token;
+}
+
 const errorHandler = (err, req, res) => {
   if (err.response) {
     // The request was made and the server responded with a status code
@@ -68,10 +81,12 @@ app.post('/api/signin', async (req, res) => {
 
 app.get('/api/user/timeline', async (req, res) => {
   try {
+    const token = await refreshToken(req.headers.token);
+
     const username = req.headers.username;
-    const token = req.headers.token;
     const result = await api.get('/user/timeline', {headers: {Cookie: `token=${token}`}, data: {username: username}});
 
+    res.setHeader('token', token);
     res.status(200).send(result.data);
   } catch (error) {
     errorHandler(error, req, res);

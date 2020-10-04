@@ -193,7 +193,7 @@ func checkToken(r *http.Request) bool {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusNotModified {
+	if resp.StatusCode != http.StatusOK {
 		return false
 	}
 

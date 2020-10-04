@@ -251,7 +251,7 @@ func refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if time.Unix(claims.ExpiresAt, 0).Sub(time.Now()) > 10*time.Second {
-		w.WriteHeader(http.StatusNotModified)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
@@ -269,6 +269,7 @@ func refresh(w http.ResponseWriter, r *http.Request) {
 		Value:   tokenString,
 		Expires: expirationTime,
 	})
+	w.WriteHeader(http.StatusCreated)
 }
 
 func main() {

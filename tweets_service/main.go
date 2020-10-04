@@ -281,8 +281,6 @@ func natsCallback(natsMsg *nats.Msg) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	log.Warn().Msg(string(natsMsg.Data))
-
 	msg := &pb.NatsMessage{}
 	proto.Unmarshal(natsMsg.Data, msg)
 

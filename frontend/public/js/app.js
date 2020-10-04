@@ -243,6 +243,7 @@ window.addEventListener('load', () => {
         obj['date'] = date.toDateString();
       }
 
+      localStorage.setItem("token", response.headers.token);
       const html = homeTemplate({ items: response.data });
       el.html(html);
     } catch (error) {
