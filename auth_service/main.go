@@ -24,7 +24,7 @@ var (
 	rdb                         *redis.Client
 	rdbTimeout                  = 100 * time.Millisecond
 	serviceJwtExpirationTimeout = 30 * time.Minute
-	clientJwtExpirationTimeout  = 5 * time.Minute
+	clientJwtExpirationTimeout  = 15 * time.Minute
 	jwtKey                      = []byte("super_secret_key")
 	internalService             = "InternalService"
 )

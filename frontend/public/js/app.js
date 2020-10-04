@@ -12,17 +12,23 @@ window.addEventListener('load', () => {
   axios.defaults.withCredentials = true
   const api = axios.create({
     baseURL: 'http://localhost:3000/api',
-    timeout: 5000,
+    timeout: 30000,
   });
 
   async function refreshToken() {
-    const token = localStorage.getItem('token');
-    const result = await api.get('/refresh', {headers: {token: token}});
+    try {
+      const token = localStorage.getItem('token');
+      const result = await api.get('/refresh', {headers: {token: token}});
 
-    if (token != result.headers.token) {
-      localStorage.setItem('token', result.headers.token);
+      if (token != result.headers.token) {
+        localStorage.setItem('token', result.headers.token);
+      }
+    } catch (error) {
+      console.log(error);
     }
   }
+
+  setInterval(refreshToken, 5*1000);
 
   const router = new Router({
     mode: 'history',
@@ -40,9 +46,6 @@ window.addEventListener('load', () => {
   const showError = (error) => {
     const { title, message } = error.response.data;
     const html = errorTemplate({ color: 'red', title, message });
-
-    setInterval(refreshToken, 30*1000);
-
     el.html(html);
   };
 
@@ -90,8 +93,6 @@ window.addEventListener('load', () => {
 
       localStorage.setItem("username", username);
       localStorage.setItem("token", token);
-
-      setInterval(refreshToken, 30*1000);
 
       router.navigateTo('/');
     } catch (error) {
@@ -144,8 +145,6 @@ window.addEventListener('load', () => {
 
       localStorage.setItem("username", username);
       localStorage.setItem("token", token);
-
-      setInterval(refreshToken, 30*1000);
 
       router.navigateTo('/');
     } catch (error) {
@@ -313,6 +312,23 @@ window.addEventListener('load', () => {
     }
   });
 
+  const postTweetHandler = async () => {
+    const content = $('#tweet_textarea').val();
+    if (content !== "") {
+      $('#tweet_textarea').val('');
+
+      const username = localStorage.getItem("username");
+      const token = localStorage.getItem("token");
+
+      try {
+        const response = await api.post('/tweets/tweet', {creator: username, content: content }, {headers: {"token": token}});
+      } catch (error) {
+        showError(error);
+      }
+    }
+    return false;
+  };
+
   router.add('/', async () => {
     try {
       const username = localStorage.getItem("username");
@@ -327,6 +343,8 @@ window.addEventListener('load', () => {
 
       const html = homeTemplate({ items: response.data });
       el.html(html);
+
+      $('#tweet_button').click(postTweetHandler);
     } catch (error) {
       showError(error);
     } finally {

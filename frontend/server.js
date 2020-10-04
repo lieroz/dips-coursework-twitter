@@ -32,7 +32,7 @@ const refreshApi = axios.create({
 async function refreshToken(token) {
   const result = await refreshApi.get('/refresh', {headers: {Cookie: `token=${token}`}});
   if (result.status == 201) {
-    return headers['set-cookie'][0].split(";")[0].split("=")[1];
+    return result.headers['set-cookie'][0].split(";")[0].split("=")[1];
   }
   return token;
 }
@@ -147,6 +147,18 @@ app.get('/api/tweets', async (req, res) => {
       const result = await api.get('/tweets', {headers: {Cookie: `token=${token}`}, data: {tweets: tweets}});
       res.status(200).send(result.data);
     }
+  } catch (error) {
+    errorHandler(error, req, res);
+  }
+});
+
+app.post('/api/tweets/tweet', async (req, res) => {
+  try {
+    const token = req.headers.token;
+    const {creator, content} = req.body;
+
+    const result = await api.post('/tweets/tweet', {creator: creator, content: content}, {headers: {Cookie: `token=${token}`}});
+    res.status(200).send('');
   } catch (error) {
     errorHandler(error, req, res);
   }
