@@ -38,7 +38,7 @@ message GetSummaryReply {
   int64 registration_timestamp = 5;
   int64 followers_count = 6;
   int64 following_count = 7;
-  int64 tweets_count = 8;
+  repeated int64 tweets = 8;
 }
 
 enum Role {

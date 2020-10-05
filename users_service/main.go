@@ -166,7 +166,7 @@ func (*UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummar
 
 	summary := &pb.GetSummaryReply{}
 	query := `select username, firstname, lastname, description,
-		registration_timestamp, cardinality(followers), cardinality(following), cardinality(tweets)
+		registration_timestamp, cardinality(followers), cardinality(following), tweets
 		from users where username = $1`
 
 	psqlCtx, psqlCtxCancel := context.WithTimeout(ctx, psqlCtxTimeout)
@@ -180,7 +180,7 @@ func (*UsersServerImpl) GetUserInfoSummary(ctx context.Context, in *pb.GetSummar
 		&timestamp,
 		&summary.FollowersCount,
 		&summary.FollowingCount,
-		&summary.TweetsCount,
+		&summary.Tweets,
 	); err != nil {
 		sublogger.Error().Err(err).Str("$1", in.Username).Msg(query)
 		if err == pgx.ErrNoRows {

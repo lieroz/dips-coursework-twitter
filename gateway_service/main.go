@@ -193,7 +193,7 @@ func checkToken(r *http.Request) bool {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusNotModified {
+	if resp.StatusCode != http.StatusOK {
 		return false
 	}
 
@@ -315,7 +315,7 @@ func GetFollowers(w http.ResponseWriter, r *http.Request) {
 
 				if !in.GetError() {
 					if first {
-						io.WriteString(w, "{")
+						io.WriteString(w, "[")
 						first = false
 					} else {
 						io.WriteString(w, ",")
@@ -325,7 +325,7 @@ func GetFollowers(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			io.WriteString(w, "}")
+			io.WriteString(w, "]")
 		}
 	}
 }
@@ -376,7 +376,7 @@ func GetFollowing(w http.ResponseWriter, r *http.Request) {
 
 				if !in.GetError() {
 					if first {
-						io.WriteString(w, "{")
+						io.WriteString(w, "[")
 						first = false
 					} else {
 						io.WriteString(w, ",")
@@ -386,7 +386,7 @@ func GetFollowing(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			io.WriteString(w, "}")
+			io.WriteString(w, "]")
 		}
 	}
 }
@@ -453,7 +453,7 @@ func GetUserTimeline(w http.ResponseWriter, r *http.Request) {
 
 						if !in.GetError() {
 							if first {
-								io.WriteString(w, "{")
+								io.WriteString(w, "[")
 								first = false
 							} else {
 								io.WriteString(w, ",")
@@ -463,7 +463,7 @@ func GetUserTimeline(w http.ResponseWriter, r *http.Request) {
 						}
 					}
 
-					io.WriteString(w, "}")
+					io.WriteString(w, "]")
 				}
 			}
 		}
@@ -619,7 +619,7 @@ func GetUserTweets(w http.ResponseWriter, r *http.Request) {
 
 				if !in.GetError() {
 					if first {
-						io.WriteString(w, "{")
+						io.WriteString(w, "[")
 						first = false
 					} else {
 						io.WriteString(w, ",")
@@ -629,7 +629,7 @@ func GetUserTweets(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			io.WriteString(w, "}")
+			io.WriteString(w, "]")
 		}
 	}
 }
